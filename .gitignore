@@ -1,11 +1,36 @@
-# venv
-.venv/
-.env
-# Python
-__pycache__/
-*.pyc
-# VSCode
-.vscode/
-# OS
+# Backend
+/backend/.venv/
+/backend/__pycache__/
+/backend/**/*.pyc
+/backend/.env
+
+# Frontend
+/frontend/node_modules/
+/frontend/dist/
+/frontend/dist-ssr/
+/frontend/.vite/
+/frontend/.env
+/frontend/*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# OS / Arquivos temporários
 .DS_Store
 Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
