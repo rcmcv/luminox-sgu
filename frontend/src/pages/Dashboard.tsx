@@ -1,34 +1,24 @@
 // src/pages/Dashboard.tsx
 
-import React, { useEffect, useState } from 'react';
-import api from '../api/client';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
-
-interface CurrentUser {
-  id: number;
-  email: string;
-  name?: string;
-  role?: string;
-}
 
 export const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [me, setMe] = useState<CurrentUser | null>(null);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchMe = async () => {
-      try {
-        const response = await api.get<CurrentUser>('/api/v1/users/me');
-        setMe(response.data);
-      } catch (error) {
-        console.error(error);
-      }
-    };
+  const displayName =
+    user?.name ?? user?.email ?? 'Usuário autenticado';
 
-    fetchMe();
-  }, []);
+  const displayRole = user?.role ?? 'N/D';
 
-  const displayName = me?.name ?? user?.name ?? me?.email ?? user?.email ?? 'Usuário';
+  const handleLogout = () => {
+    // Limpa tokens e estado de usuário
+    logout();
+    // Redireciona explicitamente para /login
+    navigate('/login', { replace: true });
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
@@ -38,11 +28,11 @@ export const Dashboard: React.FC = () => {
           <div className="text-right">
             <p className="font-medium">{displayName}</p>
             <p className="text-xs text-primary-200">
-              Papel: {me?.role ?? user?.role ?? 'N/D'}
+              Papel: {displayRole}
             </p>
           </div>
           <button
-            onClick={logout}
+            onClick={handleLogout}
             className="rounded-md bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20"
           >
             Sair

@@ -1,6 +1,6 @@
 // src/auth/useAuth.tsx
 // Contexto de autenticação + hook useAuth,
-// inspirado no fluxo simples do Labgest (token no localStorage).
+// agora lendo dados básicos do usuário direto do JWT (access_token).
 
 import React, {
   createContext,
@@ -14,12 +14,13 @@ import api, {
   setAuthTokens,
   getAccessToken,
 } from '../api/client';
+import { decodeJwtPayload } from '../utils/jwt';
 
 export type UserRole = 'ADMIN' | 'OPERACAO' | 'VIEWER' | string;
 
 export interface User {
-  id: number;
-  email: string;
+  id?: number;
+  email?: string;
   name?: string;
   role?: UserRole;
 }
@@ -46,68 +47,86 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
+// Constrói um User a partir do payload do JWT
+function buildUserFromToken(token: string): User | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return null;
+  }
+
+  const id =
+    (payload.id as number | undefined) ??
+    (payload.user_id as number | undefined);
+
+  const email =
+    (payload.email as string | undefined) ??
+    (payload.sub as string | undefined);
+
+  const name =
+    (payload.name as string | undefined) ??
+    (payload.full_name as string | undefined) ??
+    (payload.username as string | undefined) ??
+    email ??
+    'Usuário';
+
+  const role =
+    (payload.role as string | undefined) ??
+    (payload.perfil as string | undefined) ??
+    ((Array.isArray(payload.scopes) && payload.scopes[0]) as string | undefined);
+
+  return {
+    id,
+    email,
+    name,
+    role,
+  };
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Busca o usuário atual em /users/me
-  const loadCurrentUser = useCallback(async () => {
-    try {
-      const response = await api.get<User>('/api/v1/users/me');
-      setUser(response.data);
-    } catch (error) {
-      console.warn('[Auth] Falha ao carregar /users/me', error);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Ao montar o app, tenta montar o usuário a partir do token já salvo
   useEffect(() => {
-    // Só tenta carregar /me se já existir access_token salvo
     const token = getAccessToken();
     if (!token) {
       setLoading(false);
       return;
     }
 
-    loadCurrentUser();
-  }, [loadCurrentUser]);
+    const tokenUser = buildUserFromToken(token);
+    setUser(tokenUser);
+    setLoading(false);
+  }, []);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const response = await api.post<LoginResponse>('/api/v1/auth/login', {
-        email,
-        password,
-      });
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await api.post<LoginResponse>('/api/v1/auth/login', {
+      email,
+      password,
+    });
 
-      const { access_token, refresh_token, user: userData } = response.data;
+    const { access_token, refresh_token, user: userData } = response.data;
 
-      // Salva tokens no localStorage
-      setAuthTokens(access_token, refresh_token);
+    // Salva tokens no localStorage
+    setAuthTokens(access_token, refresh_token);
 
-      // Marca como logado imediatamente (via token)
-      if (userData) {
-        setUser(userData);
-      } else {
-        // Tenta buscar os dados do usuário, mas falha aqui não bloqueia o acesso
-        try {
-          await loadCurrentUser();
-        } catch {
-          // ignora
-        }
-      }
-    },
-    [loadCurrentUser],
-  );
+    // Monta usuário:
+    // 1) se backend já enviar user no login, aproveita
+    // 2) se não, decodifica do token
+    if (userData) {
+      setUser(userData);
+    } else {
+      const tokenUser = buildUserFromToken(access_token);
+      setUser(tokenUser);
+    }
+  }, []);
 
   const logout = useCallback(() => {
     clearAuthTokens();
     setUser(null);
   }, []);
 
-  // *** PONTO IMPORTANTE ***
-  // A partir de agora, "autenticado" é quem TEM TOKEN, não quem tem user carregado
+  // Autenticado = existe access_token no localStorage
   const isAuthenticated = !!getAccessToken();
 
   const value: AuthContextValue = {

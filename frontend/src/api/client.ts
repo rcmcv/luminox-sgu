@@ -86,20 +86,23 @@ api.interceptors.response.use(
     }
 
     const status = error.response.status;
+    const url: string | undefined = originalRequest.url;
 
-    // Se não for 401, não vamos mexer
+    // Se não for 401, não mexe
     if (status !== 401) {
       return Promise.reject(error);
     }
 
-    const url: string | undefined = originalRequest.url;
-
-    // Não tentar refresh/redirect para endpoints de login/refresh
+    // ⚠️ IMPORTANTE:
+    // - Não tentar refresh/redirect para endpoints de login/refresh
+    // - E AGORA: também NÃO tentar para /users/me
     if (
       url &&
       (url.includes('/api/v1/auth/login') ||
-        url.includes('/api/v1/auth/refresh'))
+        url.includes('/api/v1/auth/refresh') ||
+        url.includes('/api/v1/users/me'))
     ) {
+      // Deixa o componente lidar com o erro, mas não derruba o usuário
       return Promise.reject(error);
     }
 
@@ -111,7 +114,8 @@ api.interceptors.response.use(
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
       clearAuthTokens();
-      window.location.href = '/login';
+      // Aqui poderíamos deixar o RequireAuth redirecionar depois,
+      // mas por enquanto podemos não redirecionar direto.
       return Promise.reject(error);
     }
 
@@ -160,7 +164,7 @@ api.interceptors.response.use(
       processPendingRequests(err);
       isRefreshing = false;
       clearAuthTokens();
-      window.location.href = '/login';
+      // Não forçamos redirect aqui; o RequireAuth cuida disso quando for o caso
       return Promise.reject(err);
     }
   },
