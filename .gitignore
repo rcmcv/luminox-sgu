@@ -3,6 +3,7 @@
 /backend/__pycache__/
 /backend/**/*.pyc
 /backend/.env
+/backend/dev.db
 
 # Frontend
 /frontend/node_modules/
