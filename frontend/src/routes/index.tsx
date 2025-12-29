@@ -5,6 +5,7 @@ import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Login } from '../pages/Login';
 import { Dashboard } from '../pages/Dashboard';
+import { OrcamentosList } from '../pages/OrcamentosList';
 import { RequireAuth } from '../auth/RequireAuth';
 
 export const AppRoutes: React.FC = () => {
@@ -13,12 +14,21 @@ export const AppRoutes: React.FC = () => {
       {/* Pública */}
       <Route path="/login" element={<Login />} />
 
-      {/* Protegida */}
+      {/* Protegidas */}
       <Route
         path="/dashboard"
         element={
           <RequireAuth>
             <Dashboard />
+          </RequireAuth>
+        }
+      />
+
+      <Route
+        path="/orcamentos"
+        element={
+          <RequireAuth>
+            <OrcamentosList />
           </RequireAuth>
         }
       />
