@@ -1,14 +1,15 @@
 // src/pages/OrcamentosList.tsx
-// Lista de orçamentos - consumindo API real e exibindo nome do cliente.
+// Lista de orçamentos - consumindo API real, exibindo nome do cliente
+// e com filtros simples (status + cliente).
 
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
 import { AppLayout } from '../components/layout/AppLayout';
 import { fetchOrcamentos } from '../api/orcamentos';
 import { fetchClientes } from '../api/clientes';
 import type { Orcamento } from '../types/orcamento';
 import type { Cliente } from '../types/cliente';
 import { useAuth } from '../auth/useAuth';
+import { useNavigate } from 'react-router-dom';
 
 export const OrcamentosList: React.FC = () => {
   const { user } = useAuth();
@@ -16,6 +17,9 @@ export const OrcamentosList: React.FC = () => {
   const [clientesMap, setClientesMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [statusFilter, setStatusFilter] = useState<string>('TODOS');
+  const [clienteFilter, setClienteFilter] = useState<string>('');
 
   const navigate = useNavigate();
 
@@ -113,9 +117,31 @@ export const OrcamentosList: React.FC = () => {
     return 'bg-slate-100 text-slate-700';
   };
 
+  // Aplica filtros em memória (status + texto do cliente)
+  const orcamentosFiltrados = useMemo(() => {
+    return orcamentos.filter((orc) => {
+      const status = formatStatus(orc);
+      const clienteNome = formatCliente(orc).toLowerCase();
+      const textoBusca = clienteFilter.trim().toLowerCase();
+
+      // Filtro de status
+      if (statusFilter !== 'TODOS' && status !== statusFilter) {
+        return false;
+      }
+
+      // Filtro de cliente (busca contém)
+      if (textoBusca && !clienteNome.includes(textoBusca)) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [orcamentos, statusFilter, clienteFilter, clientesMap]);
+
   return (
     <AppLayout title="Orçamentos">
       <div className="rounded-xl bg-white p-6 shadow-md">
+        {/* Cabeçalho + botão novo */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-800">
@@ -133,6 +159,39 @@ export const OrcamentosList: React.FC = () => {
           )}
         </div>
 
+        {/* Filtros */}
+        <div className="mb-4 grid gap-3 text-xs sm:grid-cols-3">
+          <div className="sm:col-span-1">
+            <label className="mb-1 block font-medium text-slate-700">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            >
+              <option value="TODOS">Todos</option>
+              <option value="RASCUNHO">Rascunho</option>
+              <option value="ENVIADO">Enviado</option>
+              <option value="ACEITO">Aceito</option>
+              <option value="CANCELADO">Cancelado</option>
+            </select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="mb-1 block font-medium text-slate-700">
+              Cliente (buscar por nome)
+            </label>
+            <input
+              type="text"
+              placeholder="Digite parte do nome do cliente..."
+              value={clienteFilter}
+              onChange={(e) => setClienteFilter(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 shadow-sm outline-none placeholder:text-slate-400 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+            />
+          </div>
+        </div>
+
         {/* Mensagens de loading / erro */}
         {loading && (
           <p className="mb-3 text-sm text-slate-500">
@@ -146,6 +205,7 @@ export const OrcamentosList: React.FC = () => {
           </div>
         )}
 
+        {/* Tabela */}
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-sm">
             <thead>
@@ -172,7 +232,7 @@ export const OrcamentosList: React.FC = () => {
             </thead>
             <tbody>
               {!loading &&
-                orcamentos.map((orc) => {
+                orcamentosFiltrados.map((orc) => {
                   const status = formatStatus(orc);
 
                   return (
@@ -224,13 +284,13 @@ export const OrcamentosList: React.FC = () => {
                   );
                 })}
 
-              {!loading && !error && orcamentos.length === 0 && (
+              {!loading && !error && orcamentosFiltrados.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}
                     className="px-3 py-4 text-center text-sm text-slate-500"
                   >
-                    Nenhum orçamento encontrado.
+                    Nenhum orçamento encontrado com os filtros atuais.
                   </td>
                 </tr>
               )}
