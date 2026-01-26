@@ -5,7 +5,9 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { fetchOrcamentoById } from '../api/orcamentos';
+import { fetchOrcamentoItens } from '../api/orcamentoItens';
 import type { Orcamento } from '../types/orcamento';
+import type { OrcamentoItem } from '../types/orcamentoItem';
 
 interface LocationState {
   clienteNome?: string;
@@ -20,6 +22,10 @@ export const OrcamentoDetalhe: React.FC = () => {
   const [orcamento, setOrcamento] = useState<Orcamento | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [itens, setItens] = useState<OrcamentoItem[]>([]);
+  const [loadingItens, setLoadingItens] = useState<boolean>(false);
+  const [erroItens, setErroItens] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -51,6 +57,28 @@ export const OrcamentoDetalhe: React.FC = () => {
 
     carregar();
   }, [id]);
+
+  // Carrega itens assim que tivermos o orçamento carregado com sucesso
+  useEffect(() => {
+    if (!orcamento) return;
+
+    const carregarItens = async () => {
+      try {
+        setLoadingItens(true);
+        setErroItens(null);
+        const data = await fetchOrcamentoItens(orcamento.id);
+        setItens(data);
+      } catch (err) {
+        // Em teoria não cai aqui, pois o client já trata erro retornando []
+        console.error('[Orçamentos] Erro ao carregar itens do orçamento:', err);
+        setErroItens('Não foi possível carregar os itens deste orçamento.');
+      } finally {
+        setLoadingItens(false);
+      }
+    };
+
+    carregarItens();
+  }, [orcamento]);
 
   const handleVoltar = () => {
     navigate('/orcamentos');
@@ -111,6 +139,39 @@ export const OrcamentoDetalhe: React.FC = () => {
   const pageTitle = orcamento
     ? `Orçamento ${formatCodigo(orcamento)}`
     : 'Detalhes do orçamento';
+
+  const formatDescricaoItem = (item: OrcamentoItem): string => {
+    return (
+      item.descricao ||
+      item.detalhamento ||
+      `Item #${item.id}`
+    );
+  };
+
+  const formatQuantidade = (item: OrcamentoItem): string => {
+    const qtd = item.quantidade ?? 0;
+    const unidade = item.unidade ?? '';
+    if (!unidade) {
+      return qtd.toLocaleString('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+    return `${qtd.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} ${unidade}`;
+  };
+
+  const formatValorUnitario = (item: OrcamentoItem): string => {
+    const v = item.valor_unitario ?? item.preco_unitario ?? 0;
+    return formatValor(v);
+  };
+
+  const formatTotalItem = (item: OrcamentoItem): string => {
+    const v = item.total ?? item.subtotal ?? 0;
+    return formatValor(v);
+  };
 
   return (
     <AppLayout title={pageTitle}>
@@ -244,15 +305,80 @@ export const OrcamentoDetalhe: React.FC = () => {
               )}
             </div>
 
-            {/* Placeholder para itens do orçamento */}
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-              <p className="font-semibold text-slate-700">
-                Itens do orçamento
-              </p>
-              <p className="mt-2 text-xs">
-                Em breve, esta seção exibirá os itens (serviços, peças, etc.)
-                associados a este orçamento.
-              </p>
+            {/* Itens do orçamento */}
+            <div className="rounded-xl bg-white p-6 shadow-md">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-800">
+                  Itens do orçamento
+                </p>
+              </div>
+
+              {loadingItens && (
+                <p className="mb-2 text-xs text-slate-500">
+                  Carregando itens...
+                </p>
+              )}
+
+              {erroItens && (
+                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  {erroItens}
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="border-b border-slate-200 px-3 py-2 text-left font-semibold text-slate-700">
+                        Descrição
+                      </th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
+                        Quantidade
+                      </th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
+                        Valor unitário
+                      </th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itens.map((item) => (
+                      <tr
+                        key={item.id}
+                        className="hover:bg-slate-50"
+                      >
+                        <td className="border-b border-slate-100 px-3 py-2 align-middle">
+                          <span className="text-slate-800">
+                            {formatDescricaoItem(item)}
+                          </span>
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
+                          {formatQuantidade(item)}
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
+                          {formatValorUnitario(item)}
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
+                          {formatTotalItem(item)}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {!loadingItens && itens.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="px-3 py-4 text-center text-xs text-slate-500"
+                        >
+                          Nenhum item encontrado para este orçamento.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
