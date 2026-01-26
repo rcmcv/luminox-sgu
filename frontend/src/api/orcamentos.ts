@@ -2,7 +2,18 @@
 // Funções de acesso à API de Orçamentos.
 
 import api from './client';
-import type { Orcamento } from '../types/orcamento';
+import type {
+  Orcamento,
+  OrcamentoStatus,
+  OrcamentoTipo,
+} from '../types/orcamento';
+
+// Envelope que o helper `created(...)` usa
+interface CreatedEnvelope {
+  data?: Orcamento;
+  message?: string;
+  [key: string]: unknown;
+}
 
 export interface OrcamentoListEnvelope {
   items?: Orcamento[];
@@ -11,7 +22,7 @@ export interface OrcamentoListEnvelope {
   [key: string]: unknown;
 }
 
-// 👉 Se o endpoint no backend for diferente, ajustar APENAS esta linha.
+// 👉 Já ajustado anteriormente; se mudar no backend, é só alterar aqui.
 const ORCAMENTOS_ENDPOINT = '/api/v1/orcamentos';
 
 export async function fetchOrcamentos(): Promise<Orcamento[]> {
@@ -44,7 +55,6 @@ export async function fetchOrcamentos(): Promise<Orcamento[]> {
     );
     return [];
   } catch (error: any) {
-    // Log detalhado para debug
     if (error?.response) {
       console.error(
         '[Orçamentos] Erro na API:',
@@ -55,7 +65,6 @@ export async function fetchOrcamentos(): Promise<Orcamento[]> {
       console.error('[Orçamentos] Erro ao chamar API:', error);
     }
 
-    // Propaga o erro para o componente mostrar mensagem amigável
     throw error;
   }
 }
@@ -80,6 +89,55 @@ export async function fetchOrcamentoById(id: number): Promise<Orcamento> {
         id,
         error,
       );
+    }
+    throw error;
+  }
+}
+
+// Payload para criação de orçamento.
+// Alinhado ao OrcamentoOut, mas campos numéricos podem ser opcionais
+// (backend pode assumir 0 ou recalcular).
+export interface OrcamentoCreateInput {
+  cliente_id: number;
+  tipo: OrcamentoTipo;
+  status: OrcamentoStatus;
+  contrato_id?: number | null;
+  moeda: string;
+  titulo?: string | null;
+  observacoes?: string | null;
+  subtotal?: number;
+  desconto?: number;
+  acrescimo?: number;
+  total?: number;
+}
+
+export async function createOrcamento(
+  payload: OrcamentoCreateInput,
+): Promise<Orcamento> {
+  try {
+    const response = await api.post<Orcamento | CreatedEnvelope>(
+      ORCAMENTOS_ENDPOINT,
+      payload,
+    );
+
+    const data = response.data as Orcamento | CreatedEnvelope;
+
+    // Se vier como { data: {...}, message: "..." }
+    if ((data as CreatedEnvelope).data) {
+      return (data as CreatedEnvelope).data as Orcamento;
+    }
+
+    // Se no futuro você mudar o backend pra devolver o objeto direto:
+    return data as Orcamento;
+  } catch (error: any) {
+    if (error?.response) {
+      console.error(
+        '[Orçamentos] Erro ao criar orçamento:',
+        error.response.status,
+        error.response.data,
+      );
+    } else {
+      console.error('[Orçamentos] Erro ao chamar API de criação:', error);
     }
     throw error;
   }

@@ -7,6 +7,7 @@ import { Login } from '../pages/Login';
 import { Dashboard } from '../pages/Dashboard';
 import { OrcamentosList } from '../pages/OrcamentosList';
 import { OrcamentoDetalhe } from '../pages/OrcamentoDetalhe';
+import { OrcamentoForm } from '../pages/OrcamentoForm';
 import { RequireAuth } from '../auth/RequireAuth';
 
 export const AppRoutes: React.FC = () => {
@@ -30,6 +31,15 @@ export const AppRoutes: React.FC = () => {
         element={
           <RequireAuth>
             <OrcamentosList />
+          </RequireAuth>
+        }
+      />
+
+      <Route
+        path="/orcamentos/novo"
+        element={
+          <RequireAuth>
+            <OrcamentoForm />
           </RequireAuth>
         }
       />
