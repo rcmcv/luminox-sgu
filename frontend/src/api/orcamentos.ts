@@ -59,3 +59,28 @@ export async function fetchOrcamentos(): Promise<Orcamento[]> {
     throw error;
   }
 }
+
+export async function fetchOrcamentoById(id: number): Promise<Orcamento> {
+  try {
+    const response = await api.get<Orcamento>(
+      `${ORCAMENTOS_ENDPOINT}/${id}`,
+    );
+    return response.data;
+  } catch (error: any) {
+    if (error?.response) {
+      console.error(
+        '[Orçamentos] Erro ao buscar orçamento por id:',
+        id,
+        error.response.status,
+        error.response.data,
+      );
+    } else {
+      console.error(
+        '[Orçamentos] Erro ao chamar API de orçamento por id:',
+        id,
+        error,
+      );
+    }
+    throw error;
+  }
+}

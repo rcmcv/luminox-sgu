@@ -2,6 +2,7 @@
 // Lista de orçamentos - consumindo API real e exibindo nome do cliente.
 
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { fetchOrcamentos } from '../api/orcamentos';
 import { fetchClientes } from '../api/clientes';
@@ -15,6 +16,8 @@ export const OrcamentosList: React.FC = () => {
   const [clientesMap, setClientesMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const navigate = useNavigate();
 
   // Regras de papel: ADMIN / OPERACAO podem criar; VIEWER só visualiza
   const role = user?.role ?? 'VIEWER';
@@ -206,7 +209,14 @@ export const OrcamentosList: React.FC = () => {
                         </span>
                       </td>
                       <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
-                        <button className="text-xs font-semibold text-primary-600 hover:text-primary-700">
+                        <button
+                          className="text-xs font-semibold text-primary-600 hover:text-primary-700"
+                          onClick={() =>
+                            navigate(`/orcamentos/${orc.id}`, {
+                              state: { clienteNome: formatCliente(orc) },
+                            })
+                          }
+                        >
                           Detalhes
                         </button>
                       </td>
