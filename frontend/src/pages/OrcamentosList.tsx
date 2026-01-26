@@ -1,15 +1,18 @@
 // src/pages/OrcamentosList.tsx
-// Lista de orçamentos - agora consumindo API real.
+// Lista de orçamentos - consumindo API real e exibindo nome do cliente.
 
 import React, { useEffect, useState } from 'react';
 import { AppLayout } from '../components/layout/AppLayout';
 import { fetchOrcamentos } from '../api/orcamentos';
+import { fetchClientes } from '../api/clientes';
 import type { Orcamento } from '../types/orcamento';
+import type { Cliente } from '../types/cliente';
 import { useAuth } from '../auth/useAuth';
 
 export const OrcamentosList: React.FC = () => {
   const { user } = useAuth();
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
+  const [clientesMap, setClientesMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,16 +20,39 @@ export const OrcamentosList: React.FC = () => {
   const role = user?.role ?? 'VIEWER';
   const canCreate = role === 'ADMIN' || role === 'OPERACAO';
 
+  // Monta um nome amigável do cliente com base nos possíveis campos
+  const buildClienteNome = (cliente: Cliente): string => {
+    return (
+      cliente.nome_fantasia ||
+      cliente.nome ||
+      cliente.razao_social ||
+      `Cliente #${cliente.id}`
+    );
+  };
+
   useEffect(() => {
     const carregar = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await fetchOrcamentos();
-        setOrcamentos(data);
+
+        const [orcData, cliData] = await Promise.all([
+          fetchOrcamentos(),
+          fetchClientes(),
+        ]);
+
+        setOrcamentos(orcData);
+
+        const map: Record<number, string> = {};
+        cliData.forEach((cli) => {
+          map[cli.id] = buildClienteNome(cli);
+        });
+        setClientesMap(map);
       } catch (err) {
         console.error('[Orçamentos] Erro ao carregar', err);
-        setError('Não foi possível carregar os orçamentos. Tente novamente mais tarde.');
+        setError(
+          'Não foi possível carregar os orçamentos. Tente novamente mais tarde.',
+        );
       } finally {
         setLoading(false);
       }
@@ -42,31 +68,26 @@ export const OrcamentosList: React.FC = () => {
   };
 
   const formatCliente = (orc: Orcamento): string => {
-    // Se vier como string direta
-    if (typeof orc.cliente === 'string') return orc.cliente;
-    // Se vier em campo cliente_nome
-    if (orc.cliente_nome) return orc.cliente_nome;
-    // Se vier como objeto (cliente: { nome: '...' })
-    if (orc.cliente && typeof orc.cliente === 'object') {
-      const anyCliente = orc.cliente as { nome?: string; name?: string };
-      return anyCliente.nome ?? anyCliente.name ?? '—';
+    if (orc.cliente_id && clientesMap[orc.cliente_id]) {
+      return clientesMap[orc.cliente_id];
+    }
+    if (orc.cliente_id) {
+      return `Cliente #${orc.cliente_id}`;
     }
     return '—';
   };
 
   const formatValor = (orc: Orcamento): string => {
-    const valor = orc.valor_total ?? orc.valor ?? 0;
+    const valor = orc.total ?? orc.subtotal ?? 0;
     return `R$ ${valor.toLocaleString('pt-BR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
   };
 
-  const formatData = (orc: Orcamento): string => {
-    const raw = orc.criado_em ?? orc.created_at;
-    if (!raw || typeof raw !== 'string') return '—';
-    // Mostra só a parte da data, se vier em formato ISO
-    return raw.split('T')[0];
+  const formatData = (dateStr: string | undefined): string => {
+    if (!dateStr) return '—';
+    return dateStr.split('T')[0];
   };
 
   const formatStatus = (orc: Orcamento): string => {
@@ -74,10 +95,13 @@ export const OrcamentosList: React.FC = () => {
   };
 
   const getStatusClasses = (status: string): string => {
-    if (status === 'ABERTO') {
-      return 'bg-amber-100 text-amber-700';
+    if (status === 'RASCUNHO') {
+      return 'bg-slate-100 text-slate-700';
     }
-    if (status === 'APROVADO') {
+    if (status === 'ENVIADO') {
+      return 'bg-sky-100 text-sky-700';
+    }
+    if (status === 'ACEITO') {
       return 'bg-emerald-100 text-emerald-700';
     }
     if (status === 'CANCELADO') {
@@ -147,6 +171,7 @@ export const OrcamentosList: React.FC = () => {
               {!loading &&
                 orcamentos.map((orc) => {
                   const status = formatStatus(orc);
+
                   return (
                     <tr
                       key={orc.id}
@@ -177,7 +202,7 @@ export const OrcamentosList: React.FC = () => {
                       </td>
                       <td className="border-b border-slate-100 px-3 py-2 text-center align-middle">
                         <span className="text-xs text-slate-600">
-                          {formatData(orc)}
+                          {formatData(orc.created_at)}
                         </span>
                       </td>
                       <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">

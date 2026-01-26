@@ -1,33 +1,49 @@
 // src/types/orcamento.ts
-// Tipos relacionados a Orçamentos.
-// OBS: alguns campos são opcionais para se adaptar ao backend sem quebrar.
+// Tipos relacionados a Orçamentos, alinhados com OrcamentoOut do backend.
+//
+// Campos do backend (OrcamentoOut):
+// - id, cliente_id, tipo, status, contrato_id, moeda, titulo, observacoes,
+//   subtotal, desconto, acrescimo, total, created_at, updated_at
+//
+// Adicionamos campos opcionais "codigo" e "numero" pensando em evoluções futuras.
 
-export type OrcamentoStatus = 'ABERTO' | 'APROVADO' | 'CANCELADO' | string;
+export type OrcamentoTipo = 'CONTRATO' | 'SPOT' | string;
+export type OrcamentoStatus =
+  | 'RASCUNHO'
+  | 'ENVIADO'
+  | 'ACEITO'
+  | 'CANCELADO'
+  | string;
 
 export interface Orcamento {
   id: number;
 
-  // Identificação
-  codigo?: string;       // ex: "ORC-001"
-  numero?: string;       // se backend usar "numero" em vez de "codigo"
+  // Identificadores
+  codigo?: string | null;
+  numero?: string | null;
 
-  // Cliente
-  cliente?: string;      // nome simples
-  cliente_nome?: string; // alternativa comum
-  // ou se o backend retornar objeto:
-  // cliente: { id: number; nome: string; ... }
+  // Relacionamento
+  cliente_id: number;
 
-  // Valores
-  valor_total?: number;
-  valor?: number;
+  // Metadados
+  tipo: OrcamentoTipo;
+  status: OrcamentoStatus;
+  contrato_id?: number | null;
 
-  // Status
-  status?: OrcamentoStatus;
+  moeda: string;
+  titulo?: string | null;
+  observacoes?: string | null;
+
+  // Totais
+  subtotal: number;
+  desconto: number;
+  acrescimo: number;
+  total: number;
 
   // Datas
-  criado_em?: string;    // ex: "2025-01-10T12:34:56"
-  created_at?: string;
+  created_at: string;
+  updated_at: string;
 
-  // Campos extras que o backend possa enviar
+  // Campos extras que o backend possa enviar no futuro
   [key: string]: unknown;
 }
