@@ -23,7 +23,7 @@ export interface OrcamentoListEnvelope {
 }
 
 // 👉 Já ajustado anteriormente; se mudar no backend, é só alterar aqui.
-const ORCAMENTOS_ENDPOINT = '/api/v1/orcamentos';
+export const ORCAMENTOS_ENDPOINT = '/api/v1/orcamentos';
 
 export async function fetchOrcamentos(): Promise<Orcamento[]> {
   try {

@@ -1,9 +1,8 @@
 // src/pages/OrcamentoDetalhe.tsx
-// Detalhe de um orçamento específico (/orcamentos/:id)
-
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
+import { useAuth } from '../auth/useAuth';
 import { fetchOrcamentoById } from '../api/orcamentos';
 import { fetchOrcamentoItens } from '../api/orcamentoItens';
 import type { Orcamento } from '../types/orcamento';
@@ -14,371 +13,312 @@ interface LocationState {
 }
 
 export const OrcamentoDetalhe: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as LocationState | null;
+  const { user } = useAuth();
+
+  const locationState = (location.state || {}) as LocationState;
+  const clienteNomeFromState = locationState.clienteNome;
 
   const [orcamento, setOrcamento] = useState<Orcamento | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingOrcamento, setLoadingOrcamento] = useState<boolean>(true);
+  const [orcamentoError, setOrcamentoError] = useState<string | null>(null);
 
   const [itens, setItens] = useState<OrcamentoItem[]>([]);
   const [loadingItens, setLoadingItens] = useState<boolean>(false);
-  const [erroItens, setErroItens] = useState<string | null>(null);
+  const [itensError, setItensError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
-      setError('ID de orçamento inválido.');
-      setLoading(false);
+      setOrcamentoError('ID de orçamento inválido.');
+      setLoadingOrcamento(false);
       return;
     }
 
-    const numericId = Number(id);
-    if (Number.isNaN(numericId)) {
-      setError('ID de orçamento inválido.');
-      setLoading(false);
-      return;
-    }
+    let canceled = false;
 
-    const carregar = async () => {
+    const carregarDados = async () => {
       try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchOrcamentoById(numericId);
-        setOrcamento(data);
-      } catch (err) {
-        console.error('[Orçamentos] Erro ao carregar orçamento detalhado:', err);
-        setError('Não foi possível carregar os dados do orçamento.');
-      } finally {
-        setLoading(false);
-      }
-    };
+        setLoadingOrcamento(true);
+        setOrcamentoError(null);
 
-    carregar();
-  }, [id]);
+        const orcamentoId = Number(id);
+        if (Number.isNaN(orcamentoId)) {
+          throw new Error('ID de orçamento inválido.');
+        }
 
-  // Carrega itens assim que tivermos o orçamento carregado com sucesso
-  useEffect(() => {
-    if (!orcamento) return;
+        // 1) Carrega o orçamento
+        const data = await fetchOrcamentoById(orcamentoId);
+        if (!canceled) {
+          setOrcamento(data);
+        }
 
-    const carregarItens = async () => {
-      try {
+        // 2) Carrega itens em um try/catch separado
         setLoadingItens(true);
-        setErroItens(null);
-        const data = await fetchOrcamentoItens(orcamento.id);
-        setItens(data);
-      } catch (err) {
-        // Em teoria não cai aqui, pois o client já trata erro retornando []
-        console.error('[Orçamentos] Erro ao carregar itens do orçamento:', err);
-        setErroItens('Não foi possível carregar os itens deste orçamento.');
+        setItensError(null);
+
+        try {
+          const itensData = await fetchOrcamentoItens(orcamentoId);
+          if (!canceled) {
+            setItens(itensData);
+          }
+        } catch (err) {
+          console.error(
+            '[Orçamentos] Erro ao carregar itens do orçamento:',
+            err,
+          );
+          if (!canceled) {
+            setItensError('Não foi possível carregar os itens deste orçamento.');
+          }
+        }
+      } catch (error) {
+        console.error('[Orçamentos] Erro ao carregar orçamento/detalhes:', error);
+        if (!canceled) {
+          setOrcamentoError('Não foi possível carregar o orçamento.');
+        }
       } finally {
-        setLoadingItens(false);
+        if (!canceled) {
+          setLoadingOrcamento(false);
+          setLoadingItens(false);
+        }
       }
     };
 
-    carregarItens();
-  }, [orcamento]);
+    carregarDados();
+
+    return () => {
+      canceled = true;
+    };
+  }, [id]);
 
   const handleVoltar = () => {
     navigate('/orcamentos');
   };
 
-  const formatCodigo = (orc: Orcamento): string => {
-    if (orc.codigo) return orc.codigo;
-    if (orc.numero) return orc.numero;
-    return `#${orc.id}`;
-  };
-
-  const formatCliente = (orc: Orcamento | null): string => {
-    // Se recebemos o nome via state (da lista), prioriza ele
-    if (state?.clienteNome) {
-      return state.clienteNome;
-    }
-
-    if (orc?.cliente_id) {
-      return `Cliente #${orc.cliente_id}`;
-    }
-    return '—';
-  };
-
-  const formatValor = (valor: number | undefined): string => {
-    const v = valor ?? 0;
-    return `R$ ${v.toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  };
-
-  const formatData = (dateStr: string | undefined): string => {
-    if (!dateStr) return '—';
-    return dateStr.split('T')[0];
-  };
-
-  const formatStatus = (orc: Orcamento | null): string => {
-    if (!orc?.status) return 'N/D';
-    return orc.status.toUpperCase();
-  };
-
-  const getStatusClasses = (status: string): string => {
-    if (status === 'RASCUNHO') {
-      return 'bg-slate-100 text-slate-700';
-    }
-    if (status === 'ENVIADO') {
-      return 'bg-sky-100 text-sky-700';
-    }
-    if (status === 'ACEITO') {
-      return 'bg-emerald-100 text-emerald-700';
-    }
-    if (status === 'CANCELADO') {
-      return 'bg-rose-100 text-rose-700';
-    }
-    return 'bg-slate-100 text-slate-700';
-  };
-
-  const pageTitle = orcamento
-    ? `Orçamento ${formatCodigo(orcamento)}`
-    : 'Detalhes do orçamento';
-
-  const formatDescricaoItem = (item: OrcamentoItem): string => {
-    return (
-      item.descricao ||
-      item.detalhamento ||
-      `Item #${item.id}`
-    );
-  };
-
-  const formatQuantidade = (item: OrcamentoItem): string => {
-    const qtd = item.quantidade ?? 0;
-    const unidade = item.unidade ?? '';
-    if (!unidade) {
-      return qtd.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+  const formatCurrency = (value: number, moeda?: string | null) => {
+    const currency = moeda || 'BRL';
+    try {
+      return value.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency,
       });
+    } catch {
+      return value.toFixed(2);
     }
-    return `${qtd.toLocaleString('pt-BR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })} ${unidade}`;
   };
 
-  const formatValorUnitario = (item: OrcamentoItem): string => {
-    const v = item.valor_unitario ?? item.preco_unitario ?? 0;
-    return formatValor(v);
-  };
-
-  const formatTotalItem = (item: OrcamentoItem): string => {
-    const v = item.total ?? item.subtotal ?? 0;
-    return formatValor(v);
-  };
+  const clienteLabel =
+    clienteNomeFromState ||
+    (orcamento?.cliente_id ? `Cliente #${orcamento.cliente_id}` : 'Cliente N/D');
 
   return (
-    <AppLayout title={pageTitle}>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleVoltar}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
-          >
-            <span className="inline-block h-2 w-2 -rotate-45 border-l-2 border-b-2 border-slate-600" />
-            Voltar para a lista
-          </button>
+    <AppLayout title="Detalhes do orçamento">
+      <div className="flex flex-col gap-4 p-4 md:p-6">
+        {/* Cabeçalho */}
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">
+              Orçamento #{id}
+            </h1>
+            <p className="text-sm text-slate-500">
+              {clienteLabel}
+              {user?.role ? ` • Papel: ${user.role}` : ''}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleVoltar}
+              className="inline-flex items-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              Voltar
+            </button>
+          </div>
         </div>
 
-        {loading && (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            Carregando dados do orçamento...
+        {/* Corpo */}
+        {loadingOrcamento ? (
+          <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+            Carregando orçamento...
           </div>
-        )}
-
-        {error && !loading && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+        ) : orcamentoError || !orcamento ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
+            {orcamentoError ?? 'Orçamento não encontrado.'}
           </div>
-        )}
-
-        {!loading && !error && orcamento && (
+        ) : (
           <>
-            {/* Card principal com resumo */}
-            <div className="rounded-xl bg-white p-6 shadow-md">
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-800">
-                    {formatCodigo(orcamento)}
-                  </h3>
-                  <p className="text-sm text-slate-600">
-                    {orcamento.titulo || 'Orçamento sem título'}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Cliente:{' '}
-                    <span className="font-medium text-slate-700">
-                      {formatCliente(orcamento)}
-                    </span>
-                  </p>
-                </div>
+            {/* Linha de cards: dados + totais */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Dados gerais */}
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-3 text-sm font-semibold text-slate-800">
+                  Dados do orçamento
+                </h2>
+                <dl className="space-y-1 text-sm text-slate-700">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Cliente</dt>
+                    <dd className="font-medium text-right">{clienteLabel}</dd>
+                  </div>
 
-                <div className="text-right text-sm">
-                  <p className="text-xs text-slate-500">Status</p>
-                  <span
-                    className={[
-                      'inline-flex rounded-full px-3 py-1 text-xs font-semibold',
-                      getStatusClasses(formatStatus(orcamento)),
-                    ].join(' ')}
-                  >
-                    {formatStatus(orcamento)}
-                  </span>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Tipo:{' '}
-                    <span className="font-medium text-slate-700">
-                      {orcamento.tipo}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Moeda:{' '}
-                    <span className="font-medium text-slate-700">
-                      {orcamento.moeda}
-                    </span>
-                  </p>
-                </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Tipo</dt>
+                    <dd className="font-medium text-right">{orcamento.tipo}</dd>
+                  </div>
+
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Status</dt>
+                    <dd className="font-medium text-right">{orcamento.status}</dd>
+                  </div>
+
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Moeda</dt>
+                    <dd className="font-medium text-right">{orcamento.moeda}</dd>
+                  </div>
+
+                  {orcamento.titulo && (
+                    <div className="mt-2">
+                      <dt className="text-slate-500">Título</dt>
+                      <dd className="font-medium text-slate-800">
+                        {orcamento.titulo}
+                      </dd>
+                    </div>
+                  )}
+
+                  {orcamento.observacoes && (
+                    <div className="mt-2">
+                      <dt className="text-slate-500">Observações</dt>
+                      <dd className="whitespace-pre-line text-slate-700">
+                        {orcamento.observacoes}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
               </div>
 
-              <div className="grid gap-4 rounded-lg border border-slate-100 bg-slate-50 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Subtotal
-                  </p>
-                  <p className="text-base font-semibold text-slate-800">
-                    {formatValor(orcamento.subtotal)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Desconto
-                  </p>
-                  <p className="text-base font-semibold text-slate-800">
-                    {formatValor(orcamento.desconto)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Acréscimo
-                  </p>
-                  <p className="text-base font-semibold text-slate-800">
-                    {formatValor(orcamento.acrescimo)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">
-                    Total
-                  </p>
-                  <p className="text-base font-semibold text-primary-700">
-                    {formatValor(orcamento.total)}
-                  </p>
-                </div>
-              </div>
+              {/* Totais */}
+              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-3 text-sm font-semibold text-slate-800">
+                  Totais
+                </h2>
+                <dl className="space-y-1 text-sm text-slate-700">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Subtotal</dt>
+                    <dd className="font-medium">
+                      {formatCurrency(orcamento.subtotal, orcamento.moeda)}
+                    </dd>
+                  </div>
 
-              <div className="mt-4 grid gap-4 text-xs text-slate-500 sm:grid-cols-2">
-                <p>
-                  Criado em:{' '}
-                  <span className="font-medium text-slate-700">
-                    {formatData(orcamento.created_at)}
-                  </span>
-                </p>
-                <p>
-                  Atualizado em:{' '}
-                  <span className="font-medium text-slate-700">
-                    {formatData(orcamento.updated_at)}
-                  </span>
-                </p>
-              </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Desconto</dt>
+                    <dd className="font-medium">
+                      {formatCurrency(orcamento.desconto, orcamento.moeda)}
+                    </dd>
+                  </div>
 
-              {orcamento.observacoes && (
-                <div className="mt-4 rounded-md border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700">
-                  <p className="mb-1 font-semibold text-slate-800">
-                    Observações
-                  </p>
-                  <p className="whitespace-pre-line">
-                    {orcamento.observacoes}
-                  </p>
-                </div>
-              )}
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Acréscimo</dt>
+                    <dd className="font-medium">
+                      {formatCurrency(orcamento.acrescimo, orcamento.moeda)}
+                    </dd>
+                  </div>
+
+                  <div className="mt-2 flex justify-between gap-2 border-t border-slate-200 pt-2 text-base">
+                    <dt className="font-semibold text-slate-700">Total</dt>
+                    <dd className="font-semibold text-emerald-700">
+                      {formatCurrency(orcamento.total, orcamento.moeda)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </div>
 
             {/* Itens do orçamento */}
-            <div className="rounded-xl bg-white p-6 shadow-md">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-800">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-slate-800">
                   Itens do orçamento
-                </p>
+                </h2>
+
+                {/* Próximo passo: habilitar este botão pra abrir formulário de novo item */}
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:opacity-50"
+                  disabled
+                  title="No próximo passo vamos habilitar a inclusão de itens"
+                >
+                  + Novo item (em breve)
+                </button>
               </div>
 
-              {loadingItens && (
-                <p className="mb-2 text-xs text-slate-500">
-                  Carregando itens...
+              {loadingItens ? (
+                <p className="text-sm text-slate-600">
+                  Carregando itens do orçamento...
                 </p>
-              )}
-
-              {erroItens && (
-                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  {erroItens}
+              ) : itensError ? (
+                <p className="text-sm text-red-700">
+                  {itensError}
+                </p>
+              ) : itens.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  Nenhum item cadastrado para este orçamento.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2">Descrição</th>
+                        <th className="px-3 py-2 text-right">Qtd</th>
+                        <th className="px-3 py-2">Tipo</th>
+                        <th className="px-3 py-2">U.M.</th>
+                        <th className="px-3 py-2 text-right">
+                          Preço unitário
+                        </th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itens.map((item) => (
+                        <tr
+                          key={item.id}
+                          className="border-b border-slate-100 hover:bg-slate-50"
+                        >
+                          <td className="px-3 py-2 text-slate-800">
+                            {item.descricao ||
+                              (item.item_tipo === 'HH'
+                                ? 'Hora-homem'
+                                : item.item_tipo === 'MATERIAL'
+                                ? 'Material'
+                                : 'Item')}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-700">
+                            {item.quantidade}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {item.item_tipo}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {item.uom_id ?? '-'}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-700">
+                            {item.preco_unitario != null
+                              ? formatCurrency(
+                                  item.preco_unitario,
+                                  orcamento.moeda,
+                                )
+                              : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-slate-900">
+                            {formatCurrency(item.total_item, orcamento.moeda)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
-
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse text-xs sm:text-sm">
-                  <thead>
-                    <tr className="bg-slate-50">
-                      <th className="border-b border-slate-200 px-3 py-2 text-left font-semibold text-slate-700">
-                        Descrição
-                      </th>
-                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
-                        Quantidade
-                      </th>
-                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
-                        Valor unitário
-                      </th>
-                      <th className="border-b border-slate-200 px-3 py-2 text-right font-semibold text-slate-700">
-                        Total
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itens.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="hover:bg-slate-50"
-                      >
-                        <td className="border-b border-slate-100 px-3 py-2 align-middle">
-                          <span className="text-slate-800">
-                            {formatDescricaoItem(item)}
-                          </span>
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
-                          {formatQuantidade(item)}
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
-                          {formatValorUnitario(item)}
-                        </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-right align-middle">
-                          {formatTotalItem(item)}
-                        </td>
-                      </tr>
-                    ))}
-
-                    {!loadingItens && itens.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={4}
-                          className="px-3 py-4 text-center text-xs text-slate-500"
-                        >
-                          Nenhum item encontrado para este orçamento.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </>
         )}

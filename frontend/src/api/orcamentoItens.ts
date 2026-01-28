@@ -1,54 +1,95 @@
 // src/api/orcamentoItens.ts
-// Funções de acesso à API de itens de orçamento.
+// Cliente de API para itens de orçamento, alinhado com o backend.
 
 import api from './client';
-import type { OrcamentoItem } from '../types/orcamentoItem';
+import { ORCAMENTOS_ENDPOINT } from './orcamentos';
+import type {
+  OrcamentoItem,
+  OrcamentoItemCreateInput,
+} from '../types/orcamentoItem';
 
-// Envelope genérico, caso a API use items/data/results
-export interface OrcamentoItemListEnvelope {
-  items?: OrcamentoItem[];
-  data?: OrcamentoItem[];
-  results?: OrcamentoItem[];
-  [key: string]: unknown;
+interface ApiListResponse<T> {
+  data: T[];
+  message?: string | null;
+  meta?: {
+    page?: number;
+    size?: number;
+    count?: number;
+  } | null;
 }
 
-// 👉 Ajuste este endpoint quando soubermos o caminho exato do backend.
-// Exemplo comum: /api/v1/orcamentos/{id}/itens
-const ORCAMENTO_ITENS_BASE = '/api/v1/orcamentos';
+interface ApiSingleResponse<T> {
+  data: T;
+  message?: string | null;
+}
 
+/**
+ * Lista os itens de um orçamento específico.
+ * GET /orcamentos/{orcamento_id}/itens
+ */
 export async function fetchOrcamentoItens(
   orcamentoId: number,
 ): Promise<OrcamentoItem[]> {
-  const url = `${ORCAMENTO_ITENS_BASE}/${orcamentoId}/itens`;
+  const res = await api.get<ApiListResponse<OrcamentoItem>>(
+    `${ORCAMENTOS_ENDPOINT}/${orcamentoId}/itens`,
+  );
+  return res.data?.data ?? [];
+}
 
-  try {
-    const response = await api.get<OrcamentoItem[] | OrcamentoItemListEnvelope>(
-      url,
-    );
+/**
+ * Busca um único item de orçamento.
+ * GET /orcamentos/{orcamento_id}/itens/{item_id}
+ */
+export async function fetchOrcamentoItemById(
+  orcamentoId: number,
+  itemId: number,
+): Promise<OrcamentoItem> {
+  const res = await api.get<ApiSingleResponse<OrcamentoItem>>(
+    `/orcamentos/${orcamentoId}/itens/${itemId}`,
+  );
+  return res.data.data;
+}
 
-    const data = response.data;
+/**
+ * Cria um item em um orçamento.
+ * POST /orcamentos/{orcamento_id}/itens
+ */
+export async function createOrcamentoItem(
+  orcamentoId: number,
+  payload: OrcamentoItemCreateInput,
+): Promise<OrcamentoItem> {
+  const res = await api.post<ApiSingleResponse<OrcamentoItem>>(
+    `${ORCAMENTOS_ENDPOINT}/${orcamentoId}/itens`,
+    payload,
+  );
+  return res.data.data;
+}
 
-    if (Array.isArray(data)) {
-      return data;
-    }
+/**
+ * Atualiza um item de orçamento.
+ * PUT /orcamentos/{orcamento_id}/itens/{item_id}
+ */
+export async function updateOrcamentoItem(
+  orcamentoId: number,
+  itemId: number,
+  payload: Partial<OrcamentoItemCreateInput>,
+): Promise<OrcamentoItem> {
+  const res = await api.put<ApiSingleResponse<OrcamentoItem>>(
+    `${ORCAMENTOS_ENDPOINT}/${orcamentoId}/itens/${itemId}`,
+    payload,
+  );
+  return res.data.data;
+}
 
-    if (Array.isArray(data.items)) return data.items;
-    if (Array.isArray(data.data)) return data.data;
-    if (Array.isArray(data.results)) return data.results;
-
-    console.warn(
-      '[Orçamento Itens] Resposta inesperada da API, retornando lista vazia:',
-      data,
-    );
-    return [];
-  } catch (error: any) {
-    console.warn(
-      '[Orçamento Itens] Erro ao buscar itens, retornando lista vazia:',
-      url,
-      error?.response?.status,
-      error?.response?.data ?? error,
-    );
-    // Não propaga o erro para não quebrar a tela de detalhes do orçamento
-    return [];
-  }
+/**
+ * Remove um item de orçamento.
+ * DELETE /orcamentos/{orcamento_id}/itens/{item_id}
+ */
+export async function deleteOrcamentoItem(
+  orcamentoId: number,
+  itemId: number,
+): Promise<void> {
+  await api.delete(
+    `${ORCAMENTOS_ENDPOINT}/${orcamentoId}/itens/${itemId}`,
+  );
 }
