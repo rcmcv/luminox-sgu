@@ -29,13 +29,16 @@ export const OrcamentoDetalhe: React.FC = () => {
   const [loadingItens, setLoadingItens] = useState<boolean>(false);
   const [itensError, setItensError] = useState<string | null>(null);
 
-  // Estados para novo item (tipo LIVRE)
+  // Estados para fluxo de novo item (tipo LIVRE)
   const [mostrarFormNovoItem, setMostrarFormNovoItem] = useState(false);
   const [novoItemDescricao, setNovoItemDescricao] = useState('');
   const [novoItemQuantidade, setNovoItemQuantidade] = useState('1');
   const [novoItemPrecoUnitario, setNovoItemPrecoUnitario] = useState('');
-  const [novoItemLoading, setNovoItemLoading] = useState(false);
   const [novoItemError, setNovoItemError] = useState<string | null>(null);
+  const [novoItemLoading, setNovoItemLoading] = useState(false);
+
+  // Lista de itens novos ainda não enviados ao backend
+  const [novosItens, setNovosItens] = useState<OrcamentoItemCreateInput[]>([]);
 
   useEffect(() => {
     if (!id) {
@@ -122,18 +125,24 @@ export const OrcamentoDetalhe: React.FC = () => {
 
   const handleToggleNovoItem = () => {
     setNovoItemError(null);
+    // Ao abrir o formulário, não apagamos itens já adicionados,
+    // só alternamos a visibilidade.
     setMostrarFormNovoItem((prev) => !prev);
   };
 
   const handleCancelarNovoItem = () => {
+    // Cancela todo o fluxo de inclusão em lote:
+    // limpa campos, erros, itens novos e fecha formulário.
     setNovoItemError(null);
-    setMostrarFormNovoItem(false);
     setNovoItemDescricao('');
     setNovoItemQuantidade('1');
     setNovoItemPrecoUnitario('');
+    setNovosItens([]);
+    setMostrarFormNovoItem(false);
   };
 
-  const handleSubmitNovoItem = async (event: FormEvent<HTMLFormElement>) => {
+  // Adiciona o item à lista temporária, sem chamar backend ainda
+  const handleAdicionarItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNovoItemError(null);
 
@@ -142,7 +151,6 @@ export const OrcamentoDetalhe: React.FC = () => {
       return;
     }
 
-    // Validações simples
     if (!novoItemDescricao.trim()) {
       setNovoItemError('Informe a descrição do item.');
       return;
@@ -160,39 +168,63 @@ export const OrcamentoDetalhe: React.FC = () => {
       return;
     }
 
-    const payload: OrcamentoItemCreateInput = {
+    const novo: OrcamentoItemCreateInput = {
       item_tipo: 'LIVRE',
       descricao: novoItemDescricao.trim(),
       quantidade: quantidadeNum,
       preco_unitario: precoNum,
-      // Demais campos permanecem nulos/undefined:
-      // maquina_id, tipo_hh, material_id, uom_id...
     };
+
+    setNovosItens((prev) => [...prev, novo]);
+
+    // Limpa os campos para permitir adicionar outro item rapidamente
+    setNovoItemDescricao('');
+    setNovoItemQuantidade('1');
+    setNovoItemPrecoUnitario('');
+  };
+
+  // Envia todos os itens novos para o backend e recarrega
+  const handleSalvarItens = async () => {
+    setNovoItemError(null);
+
+    if (!orcamento || !id) {
+      setNovoItemError('Orçamento inválido.');
+      return;
+    }
+
+    if (novosItens.length === 0) {
+      setNovoItemError('Adicione pelo menos um item antes de salvar.');
+      return;
+    }
 
     try {
       setNovoItemLoading(true);
 
       const orcamentoId = Number(id);
 
-      // Cria o item
-      await createOrcamentoItem(orcamentoId, payload);
+      // Cria os itens em sequência (poderíamos usar Promise.all, mas
+      // sequência facilita mensagens de erro específicas se algo falhar).
+      for (const item of novosItens) {
+        await createOrcamentoItem(orcamentoId, item);
+      }
 
-      // Recarrega itens e orçamento para atualizar total
-      const [novoOrcamento, novosItens] = await Promise.all([
+      // Recarrega itens e orçamento para atualizar totais
+      const [novoOrcamento, itensAtualizados] = await Promise.all([
         fetchOrcamentoById(orcamentoId),
         fetchOrcamentoItens(orcamentoId),
       ]);
 
       setOrcamento(novoOrcamento);
-      setItens(novosItens);
+      setItens(itensAtualizados);
 
-      // Limpa e fecha o formulário
+      // Limpa fluxo de novos itens e fecha formulário
+      setNovosItens([]);
       setNovoItemDescricao('');
       setNovoItemQuantidade('1');
       setNovoItemPrecoUnitario('');
       setMostrarFormNovoItem(false);
     } catch (error: any) {
-      console.error('[Orçamentos] Erro ao criar item de orçamento:', error);
+      console.error('[Orçamentos] Erro ao salvar itens do orçamento:', error);
 
       const detail =
         error?.response?.data?.detail ||
@@ -203,7 +235,7 @@ export const OrcamentoDetalhe: React.FC = () => {
         setNovoItemError(detail);
       } else {
         setNovoItemError(
-          'Não foi possível adicionar o item. Verifique os dados e tente novamente.',
+          'Não foi possível salvar os itens. Verifique os dados e tente novamente.',
         );
       }
     } finally {
@@ -349,18 +381,18 @@ export const OrcamentoDetalhe: React.FC = () => {
                   onClick={handleToggleNovoItem}
                   className="inline-flex items-center justify-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700"
                 >
-                  {mostrarFormNovoItem ? 'Cancelar' : '+ Novo item'}
+                  {mostrarFormNovoItem ? 'Fechar itens novos' : '+ Novo item'}
                 </button>
               </div>
 
-              {/* Formulário de novo item (tipo LIVRE) */}
+              {/* Formulário de inclusão em lote (itens LIVRE) */}
               {mostrarFormNovoItem && (
                 <form
-                  onSubmit={handleSubmitNovoItem}
+                  onSubmit={handleAdicionarItem}
                   className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"
                 >
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Novo item (tipo LIVRE)
+                    Itens novos (tipo LIVRE)
                   </p>
 
                   {novoItemError && (
@@ -416,23 +448,41 @@ export const OrcamentoDetalhe: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCancelarNovoItem}
+                        className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
+                        disabled={novoItemLoading}
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        disabled={novoItemLoading}
+                      >
+                        Adicionar item
+                      </button>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={handleCancelarNovoItem}
-                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
-                      disabled={novoItemLoading}
+                      onClick={handleSalvarItens}
+                      className="inline-flex items-center justify-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-60"
+                      disabled={novoItemLoading || novosItens.length === 0}
                     >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-                      disabled={novoItemLoading}
-                    >
-                      {novoItemLoading ? 'Salvando...' : 'Adicionar item'}
+                      {novoItemLoading ? 'Salvando itens...' : 'Salvar itens'}
                     </button>
                   </div>
+
+                  {novosItens.length > 0 && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {novosItens.length} item(ns) novo(s) pronto(s) para salvar.
+                    </p>
+                  )}
                 </form>
               )}
 
@@ -443,7 +493,7 @@ export const OrcamentoDetalhe: React.FC = () => {
                 </p>
               ) : itensError ? (
                 <p className="text-sm text-red-700">{itensError}</p>
-              ) : itens.length === 0 ? (
+              ) : itens.length === 0 && novosItens.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   Nenhum item cadastrado para este orçamento.
                 </p>
@@ -463,6 +513,7 @@ export const OrcamentoDetalhe: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
+                      {/* Itens já salvos no backend */}
                       {itens.map((item) => (
                         <tr
                           key={item.id}
@@ -495,6 +546,37 @@ export const OrcamentoDetalhe: React.FC = () => {
                           </td>
                           <td className="px-3 py-2 text-right font-medium text-slate-900">
                             {formatCurrency(item.total_item, orcamento.moeda)}
+                          </td>
+                        </tr>
+                      ))}
+
+                      {/* Itens novos (ainda não salvos no backend) */}
+                      {novosItens.map((item, index) => (
+                        <tr
+                          key={`novo-${index}`}
+                          className="border-b border-emerald-100 bg-emerald-50/40"
+                        >
+                          <td className="px-3 py-2 text-slate-800">
+                            {item.descricao || 'Item livre'}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-700">
+                            {item.quantidade}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700">LIVRE</td>
+                          <td className="px-3 py-2 text-slate-700">-</td>
+                          <td className="px-3 py-2 text-right text-slate-700">
+                            {item.preco_unitario != null
+                              ? formatCurrency(
+                                  item.preco_unitario,
+                                  orcamento.moeda,
+                                )
+                              : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium text-slate-900">
+                            {formatCurrency(
+                              item.quantidade * (item.preco_unitario ?? 0),
+                              orcamento.moeda,
+                            )}
                           </td>
                         </tr>
                       ))}
