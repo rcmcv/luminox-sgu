@@ -1,12 +1,12 @@
 // src/pages/OrcamentoDetalhe.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { useAuth } from '../auth/useAuth';
 import { fetchOrcamentoById } from '../api/orcamentos';
-import { fetchOrcamentoItens } from '../api/orcamentoItens';
+import { fetchOrcamentoItens, createOrcamentoItem } from '../api/orcamentoItens';
 import type { Orcamento } from '../types/orcamento';
-import type { OrcamentoItem } from '../types/orcamentoItem';
+import type { OrcamentoItem, OrcamentoItemCreateInput } from '../types/orcamentoItem';
 
 interface LocationState {
   clienteNome?: string;
@@ -28,6 +28,14 @@ export const OrcamentoDetalhe: React.FC = () => {
   const [itens, setItens] = useState<OrcamentoItem[]>([]);
   const [loadingItens, setLoadingItens] = useState<boolean>(false);
   const [itensError, setItensError] = useState<string | null>(null);
+
+  // Estados para novo item (tipo LIVRE)
+  const [mostrarFormNovoItem, setMostrarFormNovoItem] = useState(false);
+  const [novoItemDescricao, setNovoItemDescricao] = useState('');
+  const [novoItemQuantidade, setNovoItemQuantidade] = useState('1');
+  const [novoItemPrecoUnitario, setNovoItemPrecoUnitario] = useState('');
+  const [novoItemLoading, setNovoItemLoading] = useState(false);
+  const [novoItemError, setNovoItemError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -112,6 +120,97 @@ export const OrcamentoDetalhe: React.FC = () => {
     clienteNomeFromState ||
     (orcamento?.cliente_id ? `Cliente #${orcamento.cliente_id}` : 'Cliente N/D');
 
+  const handleToggleNovoItem = () => {
+    setNovoItemError(null);
+    setMostrarFormNovoItem((prev) => !prev);
+  };
+
+  const handleCancelarNovoItem = () => {
+    setNovoItemError(null);
+    setMostrarFormNovoItem(false);
+    setNovoItemDescricao('');
+    setNovoItemQuantidade('1');
+    setNovoItemPrecoUnitario('');
+  };
+
+  const handleSubmitNovoItem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setNovoItemError(null);
+
+    if (!orcamento || !id) {
+      setNovoItemError('Orçamento inválido.');
+      return;
+    }
+
+    // Validações simples
+    if (!novoItemDescricao.trim()) {
+      setNovoItemError('Informe a descrição do item.');
+      return;
+    }
+
+    const quantidadeNum = Number(novoItemQuantidade.replace(',', '.'));
+    if (!Number.isFinite(quantidadeNum) || quantidadeNum <= 0) {
+      setNovoItemError('Informe uma quantidade válida (maior que zero).');
+      return;
+    }
+
+    const precoNum = Number(novoItemPrecoUnitario.replace(',', '.'));
+    if (!Number.isFinite(precoNum) || precoNum < 0) {
+      setNovoItemError('Informe um preço unitário válido (zero ou maior).');
+      return;
+    }
+
+    const payload: OrcamentoItemCreateInput = {
+      item_tipo: 'LIVRE',
+      descricao: novoItemDescricao.trim(),
+      quantidade: quantidadeNum,
+      preco_unitario: precoNum,
+      // Demais campos permanecem nulos/undefined:
+      // maquina_id, tipo_hh, material_id, uom_id...
+    };
+
+    try {
+      setNovoItemLoading(true);
+
+      const orcamentoId = Number(id);
+
+      // Cria o item
+      await createOrcamentoItem(orcamentoId, payload);
+
+      // Recarrega itens e orçamento para atualizar total
+      const [novoOrcamento, novosItens] = await Promise.all([
+        fetchOrcamentoById(orcamentoId),
+        fetchOrcamentoItens(orcamentoId),
+      ]);
+
+      setOrcamento(novoOrcamento);
+      setItens(novosItens);
+
+      // Limpa e fecha o formulário
+      setNovoItemDescricao('');
+      setNovoItemQuantidade('1');
+      setNovoItemPrecoUnitario('');
+      setMostrarFormNovoItem(false);
+    } catch (error: any) {
+      console.error('[Orçamentos] Erro ao criar item de orçamento:', error);
+
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        null;
+
+      if (typeof detail === 'string') {
+        setNovoItemError(detail);
+      } else {
+        setNovoItemError(
+          'Não foi possível adicionar o item. Verifique os dados e tente novamente.',
+        );
+      }
+    } finally {
+      setNovoItemLoading(false);
+    }
+  };
+
   return (
     <AppLayout title="Detalhes do orçamento">
       <div className="flex flex-col gap-4 p-4 md:p-6">
@@ -169,12 +268,16 @@ export const OrcamentoDetalhe: React.FC = () => {
 
                   <div className="flex justify-between gap-2">
                     <dt className="text-slate-500">Status</dt>
-                    <dd className="font-medium text-right">{orcamento.status}</dd>
+                    <dd className="font-medium text-right">
+                      {orcamento.status}
+                    </dd>
                   </div>
 
                   <div className="flex justify-between gap-2">
                     <dt className="text-slate-500">Moeda</dt>
-                    <dd className="font-medium text-right">{orcamento.moeda}</dd>
+                    <dd className="font-medium text-right">
+                      {orcamento.moeda}
+                    </dd>
                   </div>
 
                   {orcamento.titulo && (
@@ -236,30 +339,110 @@ export const OrcamentoDetalhe: React.FC = () => {
 
             {/* Itens do orçamento */}
             <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-semibold text-slate-800">
                   Itens do orçamento
                 </h2>
 
-                {/* Próximo passo: habilitar este botão pra abrir formulário de novo item */}
                 <button
                   type="button"
-                  className="inline-flex items-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:opacity-50"
-                  disabled
-                  title="No próximo passo vamos habilitar a inclusão de itens"
+                  onClick={handleToggleNovoItem}
+                  className="inline-flex items-center justify-center rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700"
                 >
-                  + Novo item (em breve)
+                  {mostrarFormNovoItem ? 'Cancelar' : '+ Novo item'}
                 </button>
               </div>
 
+              {/* Formulário de novo item (tipo LIVRE) */}
+              {mostrarFormNovoItem && (
+                <form
+                  onSubmit={handleSubmitNovoItem}
+                  className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm"
+                >
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Novo item (tipo LIVRE)
+                  </p>
+
+                  {novoItemError && (
+                    <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                      {novoItemError}
+                    </div>
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="sm:col-span-2">
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Descrição
+                      </label>
+                      <input
+                        type="text"
+                        value={novoItemDescricao}
+                        onChange={(e) => setNovoItemDescricao(e.target.value)}
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                        placeholder="Ex.: Usinagem de eixo Ø50 x 300mm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Quantidade
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={novoItemQuantidade}
+                        onChange={(e) => setNovoItemQuantidade(e.target.value)}
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Preço unitário
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={novoItemPrecoUnitario}
+                        onChange={(e) =>
+                          setNovoItemPrecoUnitario(e.target.value)
+                        }
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCancelarNovoItem}
+                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-100"
+                      disabled={novoItemLoading}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+                      disabled={novoItemLoading}
+                    >
+                      {novoItemLoading ? 'Salvando...' : 'Adicionar item'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Lista de itens */}
               {loadingItens ? (
                 <p className="text-sm text-slate-600">
                   Carregando itens do orçamento...
                 </p>
               ) : itensError ? (
-                <p className="text-sm text-red-700">
-                  {itensError}
-                </p>
+                <p className="text-sm text-red-700">{itensError}</p>
               ) : itens.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   Nenhum item cadastrado para este orçamento.
