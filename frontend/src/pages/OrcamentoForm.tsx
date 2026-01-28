@@ -29,7 +29,6 @@ export const OrcamentoForm: React.FC = () => {
 
   const [saving, setSaving] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const carregarClientes = async () => {
@@ -69,7 +68,6 @@ export const OrcamentoForm: React.FC = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
-    setFormSuccess(null);
 
     // Validações simples
     if (!clienteId) {
@@ -105,32 +103,29 @@ export const OrcamentoForm: React.FC = () => {
       setSaving(true);
       const created = await createOrcamento(payload);
 
-      setFormSuccess('Orçamento criado com sucesso!');
-      setTimeout(() => {
-        navigate(`/orcamentos/${created.id}`, {
-          state: { clienteNome: buildClienteNomeFromId(created.cliente_id) },
-        });
-      }, 500);
+      // 👉 Fluxo ajustado:
+      // Nada de mensagem aqui; vamos direto para o detalhe do orçamento recém-criado.
+      navigate(`/orcamentos/${created.id}`, {
+        state: { clienteNome: buildClienteNomeFromId(created.cliente_id) },
+      });
     } catch (error: any) {
-        console.error('[Orçamentos] Erro ao salvar novo orçamento:', error);
+      console.error('[Orçamentos] Erro ao salvar novo orçamento:', error);
 
-        // Se o backend mandou um "detail" amigável, usa ele
-        const detail =
-            error?.response?.data?.detail ||
-            error?.response?.data?.message ||
-            null;
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        null;
 
-        if (typeof detail === 'string') {
-            setFormError(detail);
-        } else {
-            setFormError(
-            'Não foi possível salvar o orçamento. Verifique os dados e tente novamente.',
-            );
-        }
-        } finally {
-        setSaving(false);
-        }
-
+      if (typeof detail === 'string') {
+        setFormError(detail);
+      } else {
+        setFormError(
+          'Não foi possível salvar o orçamento. Verifique os dados e tente novamente.',
+        );
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -147,12 +142,6 @@ export const OrcamentoForm: React.FC = () => {
         {formError && (
           <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {formError}
-          </div>
-        )}
-
-        {formSuccess && (
-          <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            {formSuccess}
           </div>
         )}
 
@@ -195,19 +184,19 @@ export const OrcamentoForm: React.FC = () => {
           {/* Linha: Tipo, Status e Moeda */}
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Tipo
-                </label>
-                <select
-                    value={tipo}
-                    onChange={(e) => setTipo(e.target.value as OrcamentoTipo)}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-                >
-                    <option value="SPOT">SPOT</option>
-                    {/* Futuro:
-                    <option value="CONTRATO">CONTRATO</option>
-                    */}
-                </select>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Tipo
+              </label>
+              <select
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value as OrcamentoTipo)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+              >
+                <option value="SPOT">SPOT</option>
+                {/* Futuro:
+                <option value="CONTRATO">CONTRATO</option>
+                */}
+              </select>
             </div>
 
             <div>
