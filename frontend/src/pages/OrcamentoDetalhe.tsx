@@ -8,6 +8,7 @@ import {
   fetchOrcamentoItens,
   createOrcamentoItem,
   deleteOrcamentoItem,
+  updateOrcamentoItem,
 } from '../api/orcamentoItens';
 import type { Orcamento } from '../types/orcamento';
 import type {
@@ -36,20 +37,37 @@ export const OrcamentoDetalhe: React.FC = () => {
   const [loadingItens, setLoadingItens] = useState<boolean>(false);
   const [itensError, setItensError] = useState<string | null>(null);
 
-  // Estados para fluxo de novo item (tipo LIVRE)
+  // Fluxo de inclusão em lote (itens LIVRE)
   const [mostrarFormNovoItem, setMostrarFormNovoItem] = useState(false);
   const [novoItemDescricao, setNovoItemDescricao] = useState('');
   const [novoItemQuantidade, setNovoItemQuantidade] = useState('1');
   const [novoItemPrecoUnitario, setNovoItemPrecoUnitario] = useState('');
   const [novoItemError, setNovoItemError] = useState<string | null>(null);
   const [novoItemLoading, setNovoItemLoading] = useState(false);
-
-  // Lista de itens novos ainda não enviados ao backend
   const [novosItens, setNovosItens] = useState<OrcamentoItemCreateInput[]>([]);
 
-  // Estados para exclusão de item
+  // Exclusão de item já salvo
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
+
+  // Edição de item LIVRE já salvo
+  const [editItemId, setEditItemId] = useState<number | null>(null);
+  const [editDescricao, setEditDescricao] = useState('');
+  const [editQuantidade, setEditQuantidade] = useState('');
+  const [editPrecoUnitario, setEditPrecoUnitario] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoadingId, setEditLoadingId] = useState<number | null>(null);
+
+  // Helper para traduzir mensagens técnicas do backend em algo amigável
+  const mapPermissionMessage = (detail: unknown, fallback: string): string => {
+    if (typeof detail === 'string') {
+      if (detail === 'Not enough permissions') {
+        return 'Você não tem permissão para realizar esta ação.';
+      }
+      return detail;
+    }
+    return fallback;
+  };
 
   useEffect(() => {
     if (!id) {
@@ -65,6 +83,7 @@ export const OrcamentoDetalhe: React.FC = () => {
         setLoadingOrcamento(true);
         setOrcamentoError(null);
         setDeleteError(null);
+        setEditError(null);
 
         const orcamentoId = Number(id);
         if (Number.isNaN(orcamentoId)) {
@@ -77,7 +96,7 @@ export const OrcamentoDetalhe: React.FC = () => {
           setOrcamento(data);
         }
 
-        // 2) Carrega itens em um try/catch separado
+        // 2) Carrega itens
         setLoadingItens(true);
         setItensError(null);
 
@@ -135,16 +154,14 @@ export const OrcamentoDetalhe: React.FC = () => {
     clienteNomeFromState ||
     (orcamento?.cliente_id ? `Cliente #${orcamento.cliente_id}` : 'Cliente N/D');
 
+  // --------- Inclusão em lote de itens LIVRE ---------
+
   const handleToggleNovoItem = () => {
     setNovoItemError(null);
-    // Ao abrir o formulário, não apagamos itens já adicionados,
-    // só alternamos a visibilidade.
     setMostrarFormNovoItem((prev) => !prev);
   };
 
   const handleCancelarNovoItem = () => {
-    // Cancela todo o fluxo de inclusão em lote:
-    // limpa campos, erros, itens novos e fecha formulário.
     setNovoItemError(null);
     setNovoItemDescricao('');
     setNovoItemQuantidade('1');
@@ -153,7 +170,6 @@ export const OrcamentoDetalhe: React.FC = () => {
     setMostrarFormNovoItem(false);
   };
 
-  // Adiciona o item à lista temporária, sem chamar backend ainda
   const handleAdicionarItem = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNovoItemError(null);
@@ -189,13 +205,11 @@ export const OrcamentoDetalhe: React.FC = () => {
 
     setNovosItens((prev) => [...prev, novo]);
 
-    // Limpa os campos para permitir adicionar outro item rapidamente
     setNovoItemDescricao('');
     setNovoItemQuantidade('1');
     setNovoItemPrecoUnitario('');
   };
 
-  // Envia todos os itens novos para o backend e recarrega
   const handleSalvarItens = async () => {
     setNovoItemError(null);
 
@@ -214,12 +228,10 @@ export const OrcamentoDetalhe: React.FC = () => {
 
       const orcamentoId = Number(id);
 
-      // Cria os itens em sequência
       for (const item of novosItens) {
         await createOrcamentoItem(orcamentoId, item);
       }
 
-      // Recarrega itens e orçamento para atualizar totais
       const [novoOrcamento, itensAtualizados] = await Promise.all([
         fetchOrcamentoById(orcamentoId),
         fetchOrcamentoItens(orcamentoId),
@@ -228,7 +240,6 @@ export const OrcamentoDetalhe: React.FC = () => {
       setOrcamento(novoOrcamento);
       setItens(itensAtualizados);
 
-      // Limpa fluxo de novos itens e fecha formulário
       setNovosItens([]);
       setNovoItemDescricao('');
       setNovoItemQuantidade('1');
@@ -242,19 +253,18 @@ export const OrcamentoDetalhe: React.FC = () => {
         error?.response?.data?.message ||
         null;
 
-      if (typeof detail === 'string') {
-        setNovoItemError(detail);
-      } else {
-        setNovoItemError(
-          'Não foi possível salvar os itens. Verifique os dados e tente novamente.',
-        );
-      }
+      const message = mapPermissionMessage(
+        detail,
+        'Não foi possível salvar os itens. Verifique os dados e tente novamente.',
+      );
+      setNovoItemError(message);
     } finally {
       setNovoItemLoading(false);
     }
   };
 
-  // Exclui item já salvo no backend
+  // --------- Exclusão de item salvo ---------
+
   const handleExcluirItem = async (itemId: number) => {
     setDeleteError(null);
 
@@ -277,7 +287,6 @@ export const OrcamentoDetalhe: React.FC = () => {
 
       await deleteOrcamentoItem(orcamentoId, itemId);
 
-      // Recarrega orçamento e itens
       const [novoOrcamento, itensAtualizados] = await Promise.all([
         fetchOrcamentoById(orcamentoId),
         fetchOrcamentoItens(orcamentoId),
@@ -293,15 +302,98 @@ export const OrcamentoDetalhe: React.FC = () => {
         error?.response?.data?.message ||
         null;
 
-      if (typeof detail === 'string') {
-        setDeleteError(detail);
-      } else {
-        setDeleteError(
-          'Não foi possível excluir o item. Tente novamente em instantes.',
-        );
-      }
+      const message = mapPermissionMessage(
+        detail,
+        'Não foi possível excluir o item. Tente novamente em instantes.',
+      );
+      setDeleteError(message);
     } finally {
       setDeleteLoadingId(null);
+    }
+  };
+
+  // --------- Edição de item LIVRE salvo ---------
+
+  const iniciarEdicaoItem = (item: OrcamentoItem) => {
+    setEditError(null);
+    setEditItemId(item.id);
+    setEditDescricao(item.descricao ?? '');
+    setEditQuantidade(String(item.quantidade ?? 1));
+    setEditPrecoUnitario(
+      item.preco_unitario != null ? String(item.preco_unitario) : '',
+    );
+  };
+
+  const cancelarEdicaoItem = () => {
+    setEditError(null);
+    setEditItemId(null);
+    setEditDescricao('');
+    setEditQuantidade('');
+    setEditPrecoUnitario('');
+  };
+
+  const salvarEdicaoItem = async (itemId: number) => {
+    setEditError(null);
+
+    if (!orcamento || !id) {
+      setEditError('Orçamento inválido.');
+      return;
+    }
+
+    if (!editDescricao.trim()) {
+      setEditError('Informe a descrição do item.');
+      return;
+    }
+
+    const quantidadeNum = Number(editQuantidade.replace(',', '.'));
+    if (!Number.isFinite(quantidadeNum) || quantidadeNum <= 0) {
+      setEditError('Informe uma quantidade válida (maior que zero).');
+      return;
+    }
+
+    const precoNum = Number(editPrecoUnitario.replace(',', '.'));
+    if (!Number.isFinite(precoNum) || precoNum < 0) {
+      setEditError('Informe um preço unitário válido (zero ou maior).');
+      return;
+    }
+
+    try {
+      setEditLoadingId(itemId);
+
+      const orcamentoId = Number(id);
+
+      const payload: Partial<OrcamentoItemCreateInput> = {
+        descricao: editDescricao.trim(),
+        quantidade: quantidadeNum,
+        preco_unitario: precoNum,
+      };
+
+      await updateOrcamentoItem(orcamentoId, itemId, payload);
+
+      const [novoOrcamento, itensAtualizados] = await Promise.all([
+        fetchOrcamentoById(orcamentoId),
+        fetchOrcamentoItens(orcamentoId),
+      ]);
+
+      setOrcamento(novoOrcamento);
+      setItens(itensAtualizados);
+
+      cancelarEdicaoItem();
+    } catch (error: any) {
+      console.error('[Orçamentos] Erro ao editar item do orçamento:', error);
+
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        null;
+
+      const message = mapPermissionMessage(
+        detail,
+        'Não foi possível salvar as alterações do item. Tente novamente.',
+      );
+      setEditError(message);
+    } finally {
+      setEditLoadingId(null);
     }
   };
 
@@ -447,10 +539,15 @@ export const OrcamentoDetalhe: React.FC = () => {
                 </button>
               </div>
 
-              {/* Erro de exclusão */}
+              {/* Erros relacionados a itens */}
               {deleteError && (
-                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
                   {deleteError}
+                </div>
+              )}
+              {editError && (
+                <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                  {editError}
                 </div>
               )}
 
@@ -584,55 +681,136 @@ export const OrcamentoDetalhe: React.FC = () => {
                     </thead>
                     <tbody>
                       {/* Itens já salvos no backend */}
-                      {itens.map((item) => (
-                        <tr
-                          key={item.id}
-                          className="border-b border-slate-100 hover:bg-slate-50"
-                        >
-                          <td className="px-3 py-2 text-slate-800">
-                            {item.descricao ||
-                              (item.item_tipo === 'HH'
-                                ? 'Hora-homem'
-                                : item.item_tipo === 'MATERIAL'
-                                ? 'Material'
-                                : 'Item')}
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-700">
-                            {item.quantidade}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">
-                            {item.item_tipo}
-                          </td>
-                          <td className="px-3 py-2 text-slate-700">
-                            {item.uom_id ?? '-'}
-                          </td>
-                          <td className="px-3 py-2 text-right text-slate-700">
-                            {item.preco_unitario != null
-                              ? formatCurrency(
+                      {itens.map((item) => {
+                        const isEditando =
+                          editItemId === item.id && item.item_tipo === 'LIVRE';
+                        const isDeleteLoading = deleteLoadingId === item.id;
+                        const isEditLoading = editLoadingId === item.id;
+
+                        return (
+                          <tr
+                            key={item.id}
+                            className="border-b border-slate-100 hover:bg-slate-50"
+                          >
+                            <td className="px-3 py-2 text-slate-800">
+                              {isEditando ? (
+                                <input
+                                  type="text"
+                                  value={editDescricao}
+                                  onChange={(e) =>
+                                    setEditDescricao(e.target.value)
+                                  }
+                                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                                />
+                              ) : (
+                                item.descricao ||
+                                (item.item_tipo === 'HH'
+                                  ? 'Hora-homem'
+                                  : item.item_tipo === 'MATERIAL'
+                                  ? 'Material'
+                                  : 'Item')
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-700">
+                              {isEditando ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={editQuantidade}
+                                  onChange={(e) =>
+                                    setEditQuantidade(e.target.value)
+                                  }
+                                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                                />
+                              ) : (
+                                item.quantidade
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {item.item_tipo}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700">
+                              {item.uom_id ?? '-'}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-700">
+                              {isEditando ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  value={editPrecoUnitario}
+                                  onChange={(e) =>
+                                    setEditPrecoUnitario(e.target.value)
+                                  }
+                                  className="w-28 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 shadow-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
+                                />
+                              ) : item.preco_unitario != null ? (
+                                formatCurrency(
                                   item.preco_unitario,
                                   orcamento.moeda,
                                 )
-                              : '-'}
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium text-slate-900">
-                            {formatCurrency(item.total_item, orcamento.moeda)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleExcluirItem(item.id)}
-                              className="inline-flex items-center justify-center rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                              disabled={
-                                deleteLoadingId === item.id || novoItemLoading
-                              }
-                            >
-                              {deleteLoadingId === item.id
-                                ? 'Excluindo...'
-                                : 'Excluir'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium text-slate-900">
+                              {formatCurrency(item.total_item, orcamento.moeda)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {isEditando ? (
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelarEdicaoItem}
+                                    className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                    disabled={isEditLoading}
+                                  >
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => salvarEdicaoItem(item.id)}
+                                    className="inline-flex items-center justify-center rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                    disabled={isEditLoading}
+                                  >
+                                    {isEditLoading ? 'Salvando...' : 'Salvar'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex justify-end gap-2">
+                                  {item.item_tipo === 'LIVRE' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => iniciarEdicaoItem(item)}
+                                      className="inline-flex items-center justify-center rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                      disabled={
+                                        isDeleteLoading || novoItemLoading
+                                      }
+                                    >
+                                      Editar
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleExcluirItem(item.id)}
+                                    className="inline-flex items-center justify-center rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                    disabled={
+                                      isDeleteLoading ||
+                                      isEditLoading ||
+                                      novoItemLoading
+                                    }
+                                  >
+                                    {isDeleteLoading
+                                      ? 'Excluindo...'
+                                      : 'Excluir'}
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
 
                       {/* Itens novos (ainda não salvos no backend) */}
                       {novosItens.map((item, index) => (
