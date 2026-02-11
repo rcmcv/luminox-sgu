@@ -4,9 +4,16 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { useAuth } from '../auth/useAuth';
 import { fetchOrcamentoById } from '../api/orcamentos';
-import { fetchOrcamentoItens, createOrcamentoItem } from '../api/orcamentoItens';
+import {
+  fetchOrcamentoItens,
+  createOrcamentoItem,
+  deleteOrcamentoItem,
+} from '../api/orcamentoItens';
 import type { Orcamento } from '../types/orcamento';
-import type { OrcamentoItem, OrcamentoItemCreateInput } from '../types/orcamentoItem';
+import type {
+  OrcamentoItem,
+  OrcamentoItemCreateInput,
+} from '../types/orcamentoItem';
 
 interface LocationState {
   clienteNome?: string;
@@ -40,6 +47,10 @@ export const OrcamentoDetalhe: React.FC = () => {
   // Lista de itens novos ainda não enviados ao backend
   const [novosItens, setNovosItens] = useState<OrcamentoItemCreateInput[]>([]);
 
+  // Estados para exclusão de item
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<number | null>(null);
+
   useEffect(() => {
     if (!id) {
       setOrcamentoError('ID de orçamento inválido.');
@@ -53,6 +64,7 @@ export const OrcamentoDetalhe: React.FC = () => {
       try {
         setLoadingOrcamento(true);
         setOrcamentoError(null);
+        setDeleteError(null);
 
         const orcamentoId = Number(id);
         if (Number.isNaN(orcamentoId)) {
@@ -202,8 +214,7 @@ export const OrcamentoDetalhe: React.FC = () => {
 
       const orcamentoId = Number(id);
 
-      // Cria os itens em sequência (poderíamos usar Promise.all, mas
-      // sequência facilita mensagens de erro específicas se algo falhar).
+      // Cria os itens em sequência
       for (const item of novosItens) {
         await createOrcamentoItem(orcamentoId, item);
       }
@@ -240,6 +251,57 @@ export const OrcamentoDetalhe: React.FC = () => {
       }
     } finally {
       setNovoItemLoading(false);
+    }
+  };
+
+  // Exclui item já salvo no backend
+  const handleExcluirItem = async (itemId: number) => {
+    setDeleteError(null);
+
+    if (!orcamento || !id) {
+      setDeleteError('Orçamento inválido.');
+      return;
+    }
+
+    const confirmado = window.confirm(
+      'Tem certeza que deseja excluir este item do orçamento?',
+    );
+    if (!confirmado) {
+      return;
+    }
+
+    try {
+      setDeleteLoadingId(itemId);
+
+      const orcamentoId = Number(id);
+
+      await deleteOrcamentoItem(orcamentoId, itemId);
+
+      // Recarrega orçamento e itens
+      const [novoOrcamento, itensAtualizados] = await Promise.all([
+        fetchOrcamentoById(orcamentoId),
+        fetchOrcamentoItens(orcamentoId),
+      ]);
+
+      setOrcamento(novoOrcamento);
+      setItens(itensAtualizados);
+    } catch (error: any) {
+      console.error('[Orçamentos] Erro ao excluir item do orçamento:', error);
+
+      const detail =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        null;
+
+      if (typeof detail === 'string') {
+        setDeleteError(detail);
+      } else {
+        setDeleteError(
+          'Não foi possível excluir o item. Tente novamente em instantes.',
+        );
+      }
+    } finally {
+      setDeleteLoadingId(null);
     }
   };
 
@@ -385,6 +447,13 @@ export const OrcamentoDetalhe: React.FC = () => {
                 </button>
               </div>
 
+              {/* Erro de exclusão */}
+              {deleteError && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                  {deleteError}
+                </div>
+              )}
+
               {/* Formulário de inclusão em lote (itens LIVRE) */}
               {mostrarFormNovoItem && (
                 <form
@@ -510,6 +579,7 @@ export const OrcamentoDetalhe: React.FC = () => {
                           Preço unitário
                         </th>
                         <th className="px-3 py-2 text-right">Total</th>
+                        <th className="px-3 py-2 text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -547,6 +617,20 @@ export const OrcamentoDetalhe: React.FC = () => {
                           <td className="px-3 py-2 text-right font-medium text-slate-900">
                             {formatCurrency(item.total_item, orcamento.moeda)}
                           </td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleExcluirItem(item.id)}
+                              className="inline-flex items-center justify-center rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                              disabled={
+                                deleteLoadingId === item.id || novoItemLoading
+                              }
+                            >
+                              {deleteLoadingId === item.id
+                                ? 'Excluindo...'
+                                : 'Excluir'}
+                            </button>
+                          </td>
                         </tr>
                       ))}
 
@@ -577,6 +661,9 @@ export const OrcamentoDetalhe: React.FC = () => {
                               item.quantidade * (item.preco_unitario ?? 0),
                               orcamento.moeda,
                             )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs text-slate-500">
+                            (não salvo)
                           </td>
                         </tr>
                       ))}
