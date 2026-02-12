@@ -1,4 +1,6 @@
+from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps.db import get_db
 from app.deps.auth import get_current_user, require_roles
@@ -6,6 +8,9 @@ from app.deps.pagination import get_pagination
 from app.core.api import ok, created
 from app.schemas.orcamento import OrcamentoCreate, OrcamentoUpdate, OrcamentoOut
 from app.repositories import orcamento as repo
+from app.repositories import orcamento_item as orcamento_item_repo
+from app.repositories import cliente as cliente_repo
+from app.services.pdf_orcamento import generate_orcamento_pdf
 
 router = APIRouter()
 
@@ -134,3 +139,49 @@ async def delete_orcamento(
     if not removed:
         raise HTTPException(status_code=404, detail="Orçamento não encontrado")
     return ok(message="Orçamento removido com sucesso.", data=None, request=request)
+
+@router.get(
+    "/orcamentos/{orcamento_id}/pdf",
+    summary="Baixar PDF do orçamento (layout padrão)",
+)
+async def baixar_pdf_orcamento(
+    orcamento_id: int,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),  # VIEWER pode baixar
+):
+    """
+    Gera e retorna o PDF do orçamento.
+
+    Fluxo:
+    1) Busca orçamento
+    2) Busca itens do orçamento
+    3) Busca cliente associado
+    4) Gera PDF (bytes) via ReportLab
+    5) Retorna StreamingResponse para download
+    """
+
+    # 1) Orçamento
+    orcamento = await repo.get(db, orcamento_id)
+    if not orcamento:
+        raise HTTPException(status_code=404, detail="Orçamento não encontrado")
+
+    # 2) Itens do orçamento (ajuste a função conforme seu repo real)
+    itens = await orcamento_item_repo.list_(db, orcamento_id)
+
+    # 3) Cliente
+    cliente = await cliente_repo.get(db, orcamento.cliente_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # 4) PDF
+    pdf_bytes = generate_orcamento_pdf(orcamento=orcamento, itens=itens, cliente=cliente)
+
+    # 5) Stream + headers
+    filename = f"orcamento_{orcamento_id}.pdf"
+    stream = BytesIO(pdf_bytes)
+
+    return StreamingResponse(
+        stream,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
