@@ -41,16 +41,48 @@ LAYOUT_ULTRAGAZ = "ULTRAGAZ"
 
 def escolher_layout_cliente(cliente: Any) -> str:
     """
-    Nesta etapa: sempre PADRAO, mas pronto para evoluir.
+    Decide qual layout usar com base no cliente.
+
+    Regras:
+    - Aço Cearense -> layout específico (ainda não implementado)
+    - Ultragaz -> layout específico (ainda não implementado)
+    - Demais -> PADRAO
     """
+    nome = (getattr(cliente, "nome", None) or getattr(cliente, "name", "") or "").strip().lower()
+
+    # normaliza para evitar acentos / variações simples
+    nome_norm = (
+        nome.replace("á", "a").replace("ã", "a").replace("â", "a")
+            .replace("é", "e").replace("ê", "e")
+            .replace("í", "i")
+            .replace("ó", "o").replace("ô", "o")
+            .replace("ú", "u")
+            .replace("ç", "c")
+    )
+
+    if nome_norm == "aco cearense":
+        return LAYOUT_ACO_CEARENSE
+
+    if nome_norm == "ultragaz":
+        return LAYOUT_ULTRAGAZ
+
     return LAYOUT_PADRAO
 
 
 def generate_orcamento_pdf(orcamento: Any, itens: Iterable[Any], cliente: Any) -> bytes:
     layout = escolher_layout_cliente(cliente)
+
     if layout == LAYOUT_PADRAO:
         return _render_pdf_padrao_modelo_luminox(orcamento, itens, cliente)
-    return _render_pdf_padrao_modelo_luminox(orcamento, itens, cliente)
+
+    # Layouts ainda não implementados
+    if layout in (LAYOUT_ACO_CEARENSE, LAYOUT_ULTRAGAZ):
+        raise NotImplementedError(
+            "Layout de PDF específico para este cliente ainda não está disponível."
+        )
+
+    # Fallback seguro
+    raise NotImplementedError("Layout de PDF não suportado.")
 
 
 @dataclass(frozen=True)

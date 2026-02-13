@@ -10,6 +10,7 @@ import {
   deleteOrcamentoItem,
   updateOrcamentoItem,
 } from '../api/orcamentoItens';
+import client from '../api/client';
 import type { Orcamento } from '../types/orcamento';
 import type {
   OrcamentoItem,
@@ -36,6 +37,10 @@ export const OrcamentoDetalhe: React.FC = () => {
   const [itens, setItens] = useState<OrcamentoItem[]>([]);
   const [loadingItens, setLoadingItens] = useState<boolean>(false);
   const [itensError, setItensError] = useState<string | null>(null);
+
+  // ✅ Download PDF
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   // Fluxo de inclusão em lote (itens LIVRE)
   const [mostrarFormNovoItem, setMostrarFormNovoItem] = useState(false);
@@ -84,6 +89,7 @@ export const OrcamentoDetalhe: React.FC = () => {
         setOrcamentoError(null);
         setDeleteError(null);
         setEditError(null);
+        setPdfError(null);
 
         const orcamentoId = Number(id);
         if (Number.isNaN(orcamentoId)) {
@@ -153,6 +159,100 @@ export const OrcamentoDetalhe: React.FC = () => {
   const clienteLabel =
     clienteNomeFromState ||
     (orcamento?.cliente_id ? `Cliente #${orcamento.cliente_id}` : 'Cliente N/D');
+
+  // ✅ Extrai filename do Content-Disposition (se existir)
+  const getFilenameFromContentDisposition = (value?: string | null) => {
+    if (!value) return null;
+
+    // Ex.: attachment; filename="orcamento_1.pdf"
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i.exec(value);
+    if (!match?.[1]) return null;
+
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  };
+
+  // ✅ Baixar PDF do orçamento
+  const handleBaixarPdf = async () => {
+    setPdfError(null);
+
+    if (!id) {
+      setPdfError('ID de orçamento inválido.');
+      return;
+    }
+
+    try {
+      setPdfLoading(true);
+
+      const orcamentoId = Number(id);
+      if (Number.isNaN(orcamentoId)) {
+        setPdfError('ID de orçamento inválido.');
+        return;
+      }
+
+      const response = await client.get(`/api/v1/orcamentos/${orcamentoId}/pdf`, {
+        responseType: 'blob',
+      });
+
+      const contentDisposition =
+        (response.headers?.['content-disposition'] as string | undefined) ?? null;
+
+      const filenameFromHeader =
+        getFilenameFromContentDisposition(contentDisposition);
+
+      const filename = filenameFromHeader || `orcamento_${orcamentoId}.pdf`;
+
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('[Orçamentos] Erro ao baixar PDF:', error);
+
+      // Quando usamos responseType: "blob", erros do backend podem vir como Blob
+      let detail: string | null = null;
+
+      const resp = error?.response;
+
+      try {
+        if (resp?.data instanceof Blob) {
+          const text = await resp.data.text();
+          // tenta JSON -> pega detail/message
+          try {
+            const json = JSON.parse(text);
+            detail = json?.detail || json?.message || text;
+          } catch {
+            // se não for JSON, usa o texto bruto
+            detail = text || null;
+          }
+        } else {
+          detail = resp?.data?.detail || resp?.data?.message || null;
+        }
+      } catch {
+        // se der qualquer erro ao ler/parsing, segue para fallback
+        detail = null;
+      }
+
+      const message = mapPermissionMessage(
+        detail,
+        'Não foi possível baixar o PDF agora. Tente novamente em instantes.',
+      );
+
+      setPdfError(message);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   // --------- Inclusão em lote de itens LIVRE ---------
 
@@ -413,6 +513,17 @@ export const OrcamentoDetalhe: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* ✅ Botão baixar PDF */}
+            <button
+              type="button"
+              onClick={handleBaixarPdf}
+              disabled={pdfLoading || loadingOrcamento || !!orcamentoError}
+              className="inline-flex items-center rounded-md border border-primary-300 bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 shadow-sm hover:bg-primary-100 disabled:opacity-60"
+              title="Baixar PDF do orçamento"
+            >
+              {pdfLoading ? 'Baixando PDF...' : 'Baixar PDF'}
+            </button>
+
             <button
               type="button"
               onClick={handleVoltar}
@@ -422,6 +533,13 @@ export const OrcamentoDetalhe: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* ✅ Erro do PDF */}
+        {pdfError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shadow-sm">
+            {pdfError}
+          </div>
+        )}
 
         {/* Corpo */}
         {loadingOrcamento ? (

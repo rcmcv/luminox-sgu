@@ -174,7 +174,13 @@ async def baixar_pdf_orcamento(
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     # 4) PDF
-    pdf_bytes = generate_orcamento_pdf(orcamento=orcamento, itens=itens, cliente=cliente)
+    try:
+        pdf_bytes = generate_orcamento_pdf(orcamento=orcamento, itens=itens, cliente=cliente)
+    except NotImplementedError:
+        raise HTTPException(
+            status_code=409,
+            detail="Este cliente possui layout de PDF específico, que ainda não foi implementado.",
+        )
 
     # 5) Stream + headers
     filename = f"orcamento_{orcamento_id}.pdf"
