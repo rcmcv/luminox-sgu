@@ -1,40 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, date
 from io import BytesIO
 from typing import Any, Iterable
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-
-@dataclass(frozen=True)
-class PdfOrcamentoFormat:
-    page_size = A4
-    left_margin = 8 * mm
-    right_margin = 8 * mm
-    top_margin = 8 * mm
-    bottom_margin = 8 * mm
+from ..shared.helpers import (
+    escape,
+    fmt_date,
+    fmt_money_no_prefix,
+    fmt_number,
+    safe_add,
+    sum_totais_itens,
+    to_float,
+)
+from ..shared.styles import PDF_FORMAT_PADRAO
 
 
 def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> bytes:
     """
     Layout PADRÃO (modelo Usinagem Luminox).
-    Baseado no arquivo modelo enviado (LAYOUT_PADRÃO.pdf).
-
-    - Cabeçalho 2 colunas (empresa à esquerda / número + data à direita)
-    - Seção 1: Dados do Cliente (box)
-    - Seção 2: Descrição do Serviço (tabela de itens)
-    - Totais (à direita)
-    - Seção 3: Condições comerciais (texto fixo)
-    - Rodapé com assinaturas
+    Mantém o mesmo desenho que já estava funcionando, mas agora
+    reutilizando helpers/styles compartilhados.
     """
     buf = BytesIO()
-    fmt = PdfOrcamentoFormat()
+    fmt = PDF_FORMAT_PADRAO
 
     doc = SimpleDocTemplate(
         buf,
@@ -49,7 +42,6 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
 
     styles = getSampleStyleSheet()
 
-    # Títulos/estilos
     st_title_big = ParagraphStyle(
         name="TitleBig",
         parent=styles["Title"],
@@ -86,7 +78,6 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     empresa_nome = "USINAGEM LUMINOX"
     empresa_sub = "SERVIÇO DE TORNO, FRESA, SERRALHERIA E MANUTENÇÃO EM GERAL"
 
-    # (Por enquanto fixo; depois dá pra ler de config/.env)
     empresa_end = "Rua Padre Alfredo Nesi, n° 582 - Guadalajara - Caucaia - CE - CEP: 61.650-280"
     empresa_doc = "CNPJ: 18.147.590/0001-45"
     empresa_fone = "Fone: (85) 98566-2160"
@@ -103,14 +94,13 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
         ),
     ]
 
-    # Direita: "Proposta de Serviço" + nº + data + página
     numero = getattr(orcamento, "numero", None) or getattr(orcamento, "codigo", None) or getattr(orcamento, "id", None)
     data_criacao = getattr(orcamento, "criado_em", None) or getattr(orcamento, "created_at", None)
 
     right_block = [
         Paragraph("<b>Proposta de Serviço</b>", ParagraphStyle("RightTitle", parent=st_label, alignment=2, fontSize=12)),
-        Paragraph(f"n.º <b>{_escape(str(numero))}</b>", ParagraphStyle("RightLine", parent=st_label, alignment=2)),
-        Paragraph(_fmt_date(data_criacao), ParagraphStyle("RightLine2", parent=st_label, alignment=2)),
+        Paragraph(f"n.º <b>{escape(str(numero))}</b>", ParagraphStyle("RightLine", parent=st_label, alignment=2)),
+        Paragraph(fmt_date(data_criacao), ParagraphStyle("RightLine2", parent=st_label, alignment=2)),
         Spacer(1, 2),
         Paragraph("Página 1 de 1", ParagraphStyle("RightPage", parent=st_small, alignment=2)),
     ]
@@ -129,13 +119,12 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     )
     elements.append(header_tbl)
 
-    # Linha separadora
     elements.append(Spacer(1, 6))
     elements.append(_hr())
     elements.append(Spacer(1, 6))
 
     # -------------------------
-    # 1) Dados do Cliente (box)
+    # 1) Dados do Cliente
     # -------------------------
     elements.append(Paragraph("1. Dados do Cliente:", st_section))
 
@@ -152,12 +141,12 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     cli_email = getattr(cliente, "email", None) or "-"
 
     dados_cliente = [
-        ["Cliente:", _escape(str(cli_nome)), "CNPJ:", _escape(str(cli_cnpj))],
-        ["Endereço:", _escape(str(cli_endereco)), "I.E:", _escape(str(cli_ie))],
-        ["Bairro:", _escape(str(cli_bairro)), "Cep:", _escape(str(cli_cep))],
-        ["Cidade:", _escape(str(cli_cidade)), "Contato:", _escape(str(cli_contato))],
-        ["Estado:", _escape(str(cli_estado)), "E-mail:", _escape(str(cli_email))],
-        ["Fone:", _escape(str(cli_fone)), "", ""],
+        ["Cliente:", escape(str(cli_nome)), "CNPJ:", escape(str(cli_cnpj))],
+        ["Endereço:", escape(str(cli_endereco)), "I.E:", escape(str(cli_ie))],
+        ["Bairro:", escape(str(cli_bairro)), "Cep:", escape(str(cli_cep))],
+        ["Cidade:", escape(str(cli_cidade)), "Contato:", escape(str(cli_contato))],
+        ["Estado:", escape(str(cli_estado)), "E-mail:", escape(str(cli_email))],
+        ["Fone:", escape(str(cli_fone)), "", ""],
     ]
 
     tbl_cli = Table(dados_cliente, colWidths=[18 * mm, 92 * mm, 14 * mm, 62 * mm])
@@ -180,14 +169,12 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     elements.append(tbl_cli)
 
     # -------------------------
-    # 2) Descrição do Serviço
+    # 2) Itens
     # -------------------------
     elements.append(Spacer(1, 8))
     elements.append(Paragraph("2. DESCRIÇÃO DO SERVIÇO:", st_section))
 
-    # Tabela de itens
-    header = ["ITEM", "DESCRIÇÃO", "QTD", "VALOR UNIT.", "TOTAL"]
-    rows = [header]
+    rows = [["ITEM", "DESCRIÇÃO", "QTD", "VALOR UNIT.", "TOTAL"]]
 
     for idx, item in enumerate(itens, start=1):
         desc = getattr(item, "descricao", None) or getattr(item, "descricao_livre", None) or getattr(item, "description", None) or "-"
@@ -195,17 +182,9 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
         unit = getattr(item, "valor_unitario", None) or getattr(item, "preco_unitario", None) or getattr(item, "unit_price", None) or 0
         total_item = getattr(item, "total", None)
         if total_item is None:
-            total_item = _to_float(qtd) * _to_float(unit)
+            total_item = to_float(qtd) * to_float(unit)
 
-        rows.append(
-            [
-                str(idx),
-                _escape(str(desc)),
-                _fmt_number(qtd),
-                _fmt_money_no_prefix(unit),
-                _fmt_money_no_prefix(total_item),
-            ]
-        )
+        rows.append([str(idx), escape(str(desc)), fmt_number(qtd), fmt_money_no_prefix(unit), fmt_money_no_prefix(total_item)])
 
     t_itens = Table(rows, colWidths=[12 * mm, 110 * mm, 15 * mm, 25 * mm, 25 * mm])
     t_itens.setStyle(
@@ -214,11 +193,9 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9D9D9")),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTSIZE", (0, 0), (-1, 0), 9.0),
-
                 ("FONTSIZE", (0, 1), (-1, -1), 9.0),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-
                 ("ALIGN", (2, 1), (4, -1), "RIGHT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -229,7 +206,9 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     )
     elements.append(t_itens)
 
-    # Totais (à direita)
+    # -------------------------
+    # Totais
+    # -------------------------
     elements.append(Spacer(1, 8))
 
     subtotal = getattr(orcamento, "subtotal", None)
@@ -238,15 +217,15 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     total = getattr(orcamento, "total", None)
 
     if subtotal is None:
-        subtotal = _sum_totais_itens(itens)
+        subtotal = sum_totais_itens(itens)
     if total is None:
-        total = _safe_add(_safe_add(subtotal, acrescimo), -_to_float(desconto))
+        total = safe_add(safe_add(subtotal, acrescimo), -to_float(desconto))
 
     totals_data = [
-        ["SUBTOTAL", _fmt_money_no_prefix(subtotal)],
-        ["DESCONTO", _fmt_money_no_prefix(desconto)],
-        ["ACRÉSCIMO", _fmt_money_no_prefix(acrescimo)],
-        ["TOTAL", _fmt_money_no_prefix(total)],
+        ["SUBTOTAL", fmt_money_no_prefix(subtotal)],
+        ["DESCONTO", fmt_money_no_prefix(desconto)],
+        ["ACRÉSCIMO", fmt_money_no_prefix(acrescimo)],
+        ["TOTAL", fmt_money_no_prefix(total)],
     ]
     totals_tbl = Table(totals_data, colWidths=[30 * mm, 30 * mm], hAlign="RIGHT")
     totals_tbl.setStyle(
@@ -277,7 +256,7 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
         "* COLETA E ENTREGA SERÁ POR CONTA DA EMPRESA CONTRATANTE.",
     ]
     for linha in condicoes:
-        elements.append(Paragraph(_escape(linha), st_small))
+        elements.append(Paragraph(escape(linha), st_small))
 
     # -------------------------
     # Rodapé (assinaturas)
@@ -314,85 +293,8 @@ def render_pdf_padrao(orcamento: Any, itens: Iterable[Any], cliente: Any) -> byt
     return pdf_bytes
 
 
-# ----------------------------
-# Helpers
-# ----------------------------
-
 def _hr() -> Table:
-    """Linha horizontal simples (hack com tabela)"""
+    """Linha horizontal simples (hack com tabela)."""
     t = Table([[""]], colWidths=[190 * mm], rowHeights=[0.8])
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), colors.black)]))
     return t
-
-
-def _fmt_date(v: Any) -> str:
-    if v is None:
-        return "-"
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%d/%m/%Y")
-    try:
-        s = str(v)
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            yyyy, mm_, dd = s[:10].split("-")
-            return f"{dd}/{mm_}/{yyyy}"
-        return s
-    except Exception:
-        return "-"
-
-
-def _fmt_number(v: Any) -> str:
-    try:
-        n = float(v)
-        if abs(n - int(n)) < 1e-9:
-            return str(int(n))
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0"
-
-
-def _fmt_money_no_prefix(v: Any) -> str:
-    if v is None:
-        return "0,00"
-    try:
-        n = float(v)
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0,00"
-
-
-def _fmt_money(v: Any) -> str:
-    return f"R$ {_fmt_money_no_prefix(v)}"
-
-
-def _escape(text: str) -> str:
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-
-
-def _to_float(v: Any) -> float:
-    try:
-        if v is None:
-            return 0.0
-        return float(v)
-    except Exception:
-        return 0.0
-
-
-def _safe_add(a: Any, b: Any) -> float:
-    return _to_float(a) + _to_float(b)
-
-
-def _sum_totais_itens(itens: Iterable[Any]) -> float:
-    total = 0.0
-    for item in itens:
-        t = getattr(item, "total", None)
-        if t is None:
-            qtd = getattr(item, "quantidade", None) or getattr(item, "qtd", None) or 0
-            unit = getattr(item, "valor_unitario", None) or getattr(item, "preco_unitario", None) or getattr(item, "unit_price", None) or 0
-            t = _to_float(qtd) * _to_float(unit)
-        total += _to_float(t)
-    return total

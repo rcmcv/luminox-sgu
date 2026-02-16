@@ -1,32 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, date
 from io import BytesIO
 from typing import Any, Iterable
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-
-@dataclass(frozen=True)
-class PdfOrcamentoFormat:
-    page_size = A4
-    left_margin = 12 * mm
-    right_margin = 12 * mm
-    top_margin = 10 * mm
-    bottom_margin = 12 * mm
+from ..shared.helpers import escape, fmt_date, fmt_money_no_prefix, fmt_number, sum_totais_itens, to_float
+from ..shared.styles import PDF_FORMAT_ULTRAGAZ
 
 
 def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> bytes:
-    """
-    Layout ULTRAGAZ (conforme LAYOUT_ULTRAGAZ.pdf).
-    """
+    """Layout ULTRAGAZ (conforme LAYOUT_ULTRAGAZ.pdf), agora usando helpers/styles compartilhados."""
     buf = BytesIO()
-    fmt = PdfOrcamentoFormat()
+    fmt = PDF_FORMAT_ULTRAGAZ
 
     doc = SimpleDocTemplate(
         buf,
@@ -50,7 +39,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
         fontSize=12.5,
         leading=14,
         fontName="Helvetica-Bold",
-        alignment=1,  # center
+        alignment=1,
     )
 
     st_section = ParagraphStyle(
@@ -62,12 +51,11 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
         alignment=1,
     )
 
-    # Cores (aprox. do template)
     grey = colors.HexColor("#D9D9D9")
     grey2 = colors.HexColor("#EFEFEF")
-    blue_qty = colors.HexColor("#D9E2F3")  # coluna de qtde
+    blue_qty = colors.HexColor("#D9E2F3")
 
-    # Dados da empresa (fixos por enquanto)
+    # Empresa (fixo por enquanto)
     empresa_nome = "USINAGEM LUMINOX"
     empresa_sub = "SERVIÇOS DE TORNO, FRESA, SERRALHERIA E MANUTENÇÃO EM GERAL"
     empresa_cnpj = "CNPJ: 18.147.590/0001-45"
@@ -75,13 +63,12 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     empresa_contato = "Contato: (85) 9 8566 2160"
     empresa_email = "Email: usiluminox@gmail.com"
 
-    # Campos do orçamento
     numero = getattr(orcamento, "numero", None) or getattr(orcamento, "codigo", None) or getattr(orcamento, "id", None)
     revisao = getattr(orcamento, "revisao", None) or getattr(orcamento, "revisao_num", None) or "0"
     data_emissao = getattr(orcamento, "criado_em", None) or getattr(orcamento, "created_at", None)
     validade = getattr(orcamento, "validade", None) or getattr(orcamento, "validade_em", None)
 
-    # Cliente (puxa o que existir)
+    # Cliente
     cli_nome = getattr(cliente, "nome", None) or getattr(cliente, "name", None) or "-"
     cli_cnpj = getattr(cliente, "cnpj", None) or "-"
     cli_endereco = getattr(cliente, "endereco", None) or "-"
@@ -95,9 +82,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
 
     elements: list[Any] = []
 
-    # -------------------------------------------------
-    # Header (empresa)
-    # -------------------------------------------------
+    # Header
     top_tbl = Table(
         [
             [Paragraph(f"<b>{empresa_nome}</b>", st_small_b)],
@@ -122,23 +107,14 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     elements.append(top_tbl)
     elements.append(Spacer(1, 6))
 
-    # -------------------------------------------------
-    # Título + dados (nº, revisão, emissão, validade)
-    # -------------------------------------------------
-    titulo_tbl = Table(
-        [
-            [
-                Paragraph("PROPOSTA DE SERVIÇO", st_title),
-            ]
-        ],
-        colWidths=[190 * mm],
-    )
-    elements.append(titulo_tbl)
+    # Título
+    elements.append(Table([[Paragraph("PROPOSTA DE SERVIÇO", st_title)]], colWidths=[190 * mm]))
 
+    # Box info
     info_tbl = Table(
         [
-            ["Nº:", _escape(str(numero)), "REVISÃO:", _escape(str(revisao))],
-            ["EMISSÃO:", _fmt_date(data_emissao), "VALIDADE:", _fmt_date(validade)],
+            ["Nº:", escape(str(numero)), "REVISÃO:", escape(str(revisao))],
+            ["EMISSÃO:", fmt_date(data_emissao), "VALIDADE:", fmt_date(validade)],
         ],
         colWidths=[20 * mm, 75 * mm, 25 * mm, 70 * mm],
     )
@@ -161,17 +137,15 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     elements.append(info_tbl)
     elements.append(Spacer(1, 8))
 
-    # -------------------------------------------------
-    # Dados do cliente (box)
-    # -------------------------------------------------
+    # Cliente box
     elements.append(Paragraph("DADOS DO CLIENTE", st_section))
     cliente_tbl = Table(
         [
-            ["CLIENTE:", _escape(str(cli_nome)), "CNPJ:", _escape(str(cli_cnpj))],
-            ["ENDEREÇO:", _escape(str(cli_endereco)), "I.E:", _escape(str(cli_ie))],
-            ["BAIRRO:", _escape(str(cli_bairro)), "CEP:", _escape(str(cli_cep))],
-            ["CIDADE:", _escape(str(cli_cidade)), "ESTADO:", _escape(str(cli_estado))],
-            ["CONTATO:", _escape(str(cli_contato)), "E-MAIL:", _escape(str(cli_emails))],
+            ["CLIENTE:", escape(str(cli_nome)), "CNPJ:", escape(str(cli_cnpj))],
+            ["ENDEREÇO:", escape(str(cli_endereco)), "I.E:", escape(str(cli_ie))],
+            ["BAIRRO:", escape(str(cli_bairro)), "CEP:", escape(str(cli_cep))],
+            ["CIDADE:", escape(str(cli_cidade)), "ESTADO:", escape(str(cli_estado))],
+            ["CONTATO:", escape(str(cli_contato)), "E-MAIL:", escape(str(cli_emails))],
         ],
         colWidths=[22 * mm, 83 * mm, 16 * mm, 69 * mm],
     )
@@ -194,31 +168,19 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     elements.append(cliente_tbl)
     elements.append(Spacer(1, 8))
 
-    # -------------------------------------------------
     # Itens
-    # -------------------------------------------------
     elements.append(Paragraph("DESCRIÇÃO DO SERVIÇO", st_section))
 
-    header = ["ITEM", "DESCRIÇÃO", "QTD", "VALOR UNIT.", "TOTAL"]
-    rows = [header]
-
+    rows = [["ITEM", "DESCRIÇÃO", "QTD", "VALOR UNIT.", "TOTAL"]]
     for idx, item in enumerate(itens, start=1):
         desc = getattr(item, "descricao", None) or getattr(item, "descricao_livre", None) or getattr(item, "description", None) or "-"
         qtd = getattr(item, "quantidade", None) or getattr(item, "qtd", None) or 0
         unit = getattr(item, "valor_unitario", None) or getattr(item, "preco_unitario", None) or getattr(item, "unit_price", None) or 0
         total_item = getattr(item, "total", None)
         if total_item is None:
-            total_item = _to_float(qtd) * _to_float(unit)
+            total_item = to_float(qtd) * to_float(unit)
 
-        rows.append(
-            [
-                str(idx),
-                _escape(str(desc)),
-                _fmt_number(qtd),
-                _fmt_money_no_prefix(unit),
-                _fmt_money_no_prefix(total_item),
-            ]
-        )
+        rows.append([str(idx), escape(str(desc)), fmt_number(qtd), fmt_money_no_prefix(unit), fmt_money_no_prefix(total_item)])
 
     t_itens = Table(rows, colWidths=[12 * mm, 110 * mm, 15 * mm, 25 * mm, 25 * mm])
     t_itens.setStyle(
@@ -229,10 +191,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
                 ("FONTSIZE", (0, 0), (-1, 0), 8.8),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-
-                # Coluna QTD em azul (template)
                 ("BACKGROUND", (2, 1), (2, -1), blue_qty),
-
                 ("ALIGN", (2, 1), (4, -1), "RIGHT"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -243,9 +202,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     )
     elements.append(t_itens)
 
-    # -------------------------------------------------
     # Totais
-    # -------------------------------------------------
     elements.append(Spacer(1, 8))
 
     subtotal = getattr(orcamento, "subtotal", None)
@@ -254,15 +211,15 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     total = getattr(orcamento, "total", None)
 
     if subtotal is None:
-        subtotal = _sum_totais_itens(itens)
+        subtotal = sum_totais_itens(itens)
     if total is None:
-        total = _to_float(subtotal) + _to_float(acrescimo) - _to_float(desconto)
+        total = to_float(subtotal) + to_float(acrescimo) - to_float(desconto)
 
     totals_data = [
-        ["SUBTOTAL", _fmt_money_no_prefix(subtotal)],
-        ["DESCONTO", _fmt_money_no_prefix(desconto)],
-        ["ACRÉSCIMO", _fmt_money_no_prefix(acrescimo)],
-        ["TOTAL", _fmt_money_no_prefix(total)],
+        ["SUBTOTAL", fmt_money_no_prefix(subtotal)],
+        ["DESCONTO", fmt_money_no_prefix(desconto)],
+        ["ACRÉSCIMO", fmt_money_no_prefix(acrescimo)],
+        ["TOTAL", fmt_money_no_prefix(total)],
     ]
     totals_tbl = Table(totals_data, colWidths=[30 * mm, 30 * mm], hAlign="RIGHT")
     totals_tbl.setStyle(
@@ -285,72 +242,3 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     pdf_bytes = buf.getvalue()
     buf.close()
     return pdf_bytes
-
-
-# ----------------------------
-# Helpers
-# ----------------------------
-
-def _fmt_date(v: Any) -> str:
-    if v is None:
-        return "-"
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%d/%m/%Y")
-    try:
-        s = str(v)
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            yyyy, mm_, dd = s[:10].split("-")
-            return f"{dd}/{mm_}/{yyyy}"
-        return s
-    except Exception:
-        return "-"
-
-
-def _fmt_number(v: Any) -> str:
-    try:
-        n = float(v)
-        if abs(n - int(n)) < 1e-9:
-            return str(int(n))
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0"
-
-
-def _fmt_money_no_prefix(v: Any) -> str:
-    if v is None:
-        return "0,00"
-    try:
-        n = float(v)
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "0,00"
-
-
-def _escape(text: str) -> str:
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-
-
-def _to_float(v: Any) -> float:
-    try:
-        if v is None:
-            return 0.0
-        return float(v)
-    except Exception:
-        return 0.0
-
-
-def _sum_totais_itens(itens: Iterable[Any]) -> float:
-    total = 0.0
-    for item in itens:
-        t = getattr(item, "total", None)
-        if t is None:
-            qtd = getattr(item, "quantidade", None) or getattr(item, "qtd", None) or 0
-            unit = getattr(item, "valor_unitario", None) or getattr(item, "preco_unitario", None) or getattr(item, "unit_price", None) or 0
-            t = _to_float(qtd) * _to_float(unit)
-        total += _to_float(t)
-    return total
