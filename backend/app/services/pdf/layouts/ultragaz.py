@@ -35,8 +35,6 @@ def _register_calibri():
 
 _register_calibri()
 
-# print("Fonts registradas:", "Calibri" in pdfmetrics.getRegisteredFontNames(), "Calibri-Bold" in pdfmetrics.getRegisteredFontNames())
-
 def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> bytes:
     """
     Layout ULTRAGAZ (conforme modelo do cliente).
@@ -46,6 +44,17 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     """
     buf = BytesIO()
     fmt = PDF_FORMAT_ULTRAGAZ
+
+    # =========================================================
+    # TEMA / CORES (ULTRAGAZ) - definido 1x e reutilizado (closure)
+    # =========================================================
+    theme = {
+        "BLACK": colors.black,
+        "GRID": colors.HexColor("#A0A0A0"),
+        "TITLE_BG": colors.HexColor("#D0CECE"),
+        "LIGHT_GRAY": colors.HexColor("#E7E6E6"),
+        "LIGHT_BLUE": colors.HexColor("#D9E1F2"),
+    }
 
     doc = SimpleDocTemplate(
         buf,
@@ -114,6 +123,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     st_small_b = ST["bold"]
     st_small_center = ST["center"]
     st_small_right = ST["right"]
+    st_small_b_right = ST["bold_right"]
     st_small_b_center = ST["bold_center"]
 
     # Tabela inferior (rótulos/valores)
@@ -122,11 +132,6 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
 
     # Título da empresa ("USINAGEM LUMINOX")
     st_title = ST["title"]
-
-    # Cores (ajustáveis)
-    grey_label = colors.HexColor("#EFEFEF")  # fundo cinza claro rótulos
-    grey_grid = colors.HexColor("#A0A0A0")   # linhas internas
-    black = colors.black
 
     # --------- Dados fixos empresa ----------
     empresa_nome = "USINAGEM LUMINOX"
@@ -147,10 +152,11 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     data_emissao = getattr(orcamento, "criado_em", None) or getattr(orcamento, "created_at", None)
     validade = getattr(orcamento, "validade", None) or getattr(orcamento, "validade_em", None)
 
-    # --------- Cliente (se precisar depois) ----------
-    cli_nome = getattr(cliente, "nome", None) or getattr(cliente, "name", None) or "-"
-
     elements: list[Any] = []
+
+    page_w, page_h = fmt.page_size
+    content_w = page_w - fmt.left_margin - fmt.right_margin
+    content_h = page_h - fmt.top_margin - fmt.bottom_margin
 
     # =========================================================
     # FUNÇÃO: BORDA EXTERNA (BOX) PARA A PÁGINA INTEIRA
@@ -161,15 +167,14 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
         Isso garante que cabeçalho + conteúdo + rodapé fiquem todos dentro do mesmo contorno.
         """
         canvas.saveState()
-        page_w, page_h = fmt.page_size
 
         x = fmt.left_margin
         y = fmt.bottom_margin
-        w = page_w - fmt.left_margin - fmt.right_margin
-        h = page_h - fmt.top_margin - fmt.bottom_margin
+        w = content_w
+        h = content_h
 
         canvas.setLineWidth(1.2)
-        canvas.setStrokeColor(black)
+        canvas.setStrokeColor(theme["BLACK"])
         canvas.rect(x, y, w, h, stroke=1, fill=0)
         canvas.restoreState()
 
@@ -208,10 +213,10 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
 
                 # ✅ borda externa (box) do cabeçalho superior
-                ("BOX", (0, 0), (-1, -1), 1.2, colors.black),
+                ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
 
                 # ✅ linha vertical entre as 2 colunas (após a coluna 0)
-                ("LINEAFTER", (0, 0), (0, -1), 1.0, colors.black),
+                ("LINEAFTER", (0, 0), (0, -1), 1.0, theme["BLACK"]),
 
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
@@ -251,14 +256,11 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
                 # ✅ box externo da tabela inferior
-                ("BOX", (0, 0), (-1, -1), 1.2, colors.black),
-
-                # ✅ sem grid interno
-                # (não usar INNERGRID / GRID)
+                ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
 
                 # Fundo cinza só nos rótulos (colunas 0 e 2)
-                ("BACKGROUND", (0, 0), (0, -1), grey_label),
-                ("BACKGROUND", (2, 0), (2, -1), grey_label),
+                ("BACKGROUND", (0, 0), (0, -1), theme["LIGHT_GRAY"]),
+                ("BACKGROUND", (2, 0), (2, -1), theme["LIGHT_GRAY"]),
 
                 # ✅ alinhamentos conforme modelo
                 ("ALIGN", (0, 0), (0, -1), "RIGHT"),   # rótulos col 0 à direita
@@ -297,11 +299,6 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     cli_estado = getattr(cliente, "estado", None) or "-"
     cli_telefone = getattr(cliente, "telefone", None) or getattr(cliente, "phone", None) or "-"
     cli_email = getattr(cliente, "email", None) or "-"
-    # se existir lista de emails no seu banco, ajustamos depois
-
-    # Cores (reaproveite as mesmas do arquivo)
-    bg_header = colors.HexColor("#D9D9D9")   # faixa do título
-    bg_body = colors.HexColor("#EEEEEE")     # fundo do corpo
 
     # Estilos: rótulo (bold right) e valor (base)
     # (Você já tem st_lbl_r e st_small / st_small_b da refatoração)
@@ -343,26 +340,20 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
         TableStyle(
             [
                 # BOX externo
-                ("BOX", (0, 0), (-1, -1), 1.2, colors.black),
+                ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
 
                 # Título mesclado
                 ("SPAN", (0, 0), (3, 0)),
-                ("BACKGROUND", (0, 0), (3, 0), bg_header),
+                ("BACKGROUND", (0, 0), (3, 0), theme["TITLE_BG"]),
                 ("ALIGN", (0, 0), (3, 0), "CENTER"),
                 ("VALIGN", (0, 0), (3, 0), "MIDDLE"),
 
                 # Linha separando header do corpo
-                ("LINEBELOW", (0, 0), (3, 0), 1.2, colors.black),
-
-                # ✅ Fundo do corpo: valores brancos
-                ("BACKGROUND", (0, 1), (3, -1), colors.white),
+                ("LINEBELOW", (0, 0), (3, 0), 1.2, theme["BLACK"]),
 
                 # ✅ Fundo cinza só nos rótulos (col 0 e col 2)
-                ("BACKGROUND", (0, 1), (0, -1), bg_body),
-                ("BACKGROUND", (2, 1), (2, -1), bg_body),
-
-                # Divisor vertical central (entre col 1 e col 2)
-                #("LINEAFTER", (1, 1), (1, -1), 1.2, colors.black),
+                ("BACKGROUND", (0, 1), (0, -1), theme["LIGHT_GRAY"]),
+                ("BACKGROUND", (2, 1), (2, -1), theme["LIGHT_GRAY"]),
 
                 # Alinhamentos
                 ("ALIGN", (0, 1), (0, -1), "RIGHT"),
@@ -380,6 +371,211 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     )
     
     elements.append(tbl_cli)
+    elements.append(Spacer(1, 4))
+
+    # =========================================================
+    # DESCRIÇÃO DO SERVIÇO (ULTRAGAZ)
+    # =========================================================
+    def _build_tbl_descricao_servico(itens: Iterable[Any]) -> Table:
+
+        # ✅ inset para não grudar no box (2mm cada lado)
+        usable_w = content_w
+        usable_w_inset = usable_w - (4 * mm)
+
+        # colunas fixas
+        fixed = [10*mm, 12*mm, 28*mm, 28*mm, 28*mm]  # item, qtd, tipo, unit, total
+        desc_w = usable_w_inset - sum(fixed)
+
+        col_widths = [
+            10 * mm,   # ITEM
+            desc_w,    # DESCRIÇÃO (resto, com inset aplicado)
+            12 * mm,   # QTD
+            28 * mm,   # TIPO SERVIÇO
+            28 * mm,   # VALOR UNIT.
+            28 * mm,   # VALOR TOTAL
+        ]
+        
+        def _money_cell(valor: Any, col_w_mm: float, bold: bool = False) -> Table:
+            """
+            Renderiza 'R$' à esquerda e valor à direita dentro da célula.
+            Usa uma mini-tabela 2 colunas com widths travados para não estourar.
+            """
+            num = fmt_money_no_prefix(valor)
+
+            st_rs = st_small_b if bold else st_small
+            st_num = st_small_b_right if bold else st_small_right
+
+            rs_w = 6 * mm
+            cell_w = col_w_mm * mm
+            num_w = max(cell_w - rs_w, 10)  # garante largura mínima
+
+            mini = Table([[Paragraph("R$", st_rs), Paragraph(escape(num), st_num)]], colWidths=[rs_w, num_w])
+            mini.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ]
+                )
+            )
+            return mini
+ 
+        def _get(obj: Any, *names: str, default: Any = "-") -> Any:
+            for n in names:
+                v = getattr(obj, n, None)
+                if v is not None and v != "":
+                    return v
+            return default
+
+        def _calc_total(item: Any) -> float:
+            t = getattr(item, "total", None)
+            if t is not None:
+                return to_float(t)
+            qtd = _get(item, "quantidade", "qtd", default=0)
+            unit = _get(item, "valor_unitario", "preco_unitario", "valorUnitario", default=0)
+            return to_float(qtd) * to_float(unit)
+
+        data: list[list[Any]] = []
+
+        # Linha 0: título
+        data.append([Paragraph("DESCRIÇÃO DO SERVIÇO", st_small_b_center)] + [""] * 5)
+
+        # Linha 1: cabeçalho
+        data.append(
+            [
+                Paragraph("ITEM", st_small_b_center),
+                Paragraph("DESCRIÇÃO DO ITEM", st_small_b_center),
+                Paragraph("QTD", st_small_b_center),
+                Paragraph("TIPO SERVIÇO", st_small_b_center),
+                Paragraph("VALOR UNIT.", st_small_b_center),
+                Paragraph("VALOR TOTAL", st_small_b_center),
+            ]
+        )
+
+        # 16 linhas fixas
+        itens_list = list(itens or [])
+        max_rows = 16
+
+        for i in range(max_rows):
+            if i < len(itens_list):
+                it = itens_list[i]
+                idx = i + 1
+
+                desc = _get(it, "descricao", "descricao_item", "nome", "item", default="-")
+                tipo = _get(it, "tipo_servico", "tipo", "servico", default="TORNEARIA")
+                qtd = _get(it, "quantidade", "qtd", default=0)
+
+                unit = _get(it, "valor_unitario", "preco_unitario", "valorUnitario", default=0)
+                total = _calc_total(it)
+
+                data.append(
+                    [
+                        Paragraph(escape(str(idx)), st_small_center),
+                        Paragraph(escape(str(desc)), st_small),
+                        Paragraph(escape(fmt_number(qtd)), st_small_center),
+                        Paragraph(escape(str(tipo)), st_small_center),
+                        _money_cell(unit, 28),
+                        _money_cell(total, 28),
+                    ]
+                )
+            else:
+                data.append([""] * 6)
+
+        # Totais (rodapé)
+        total_geral = sum_totais_itens(itens_list)
+        desconto_pct = (
+            getattr(orcamento, "desconto_percent", None)
+            or getattr(orcamento, "desconto_pct", None)
+            or getattr(orcamento, "desconto", None)
+            or 0
+        )
+        desconto_pct = to_float(desconto_pct)
+        total_com_desc = total_geral * (1.0 - (desconto_pct / 100.0))
+
+        # Linha: TOTAL GERAL DO SERVIÇO
+        data.append(
+            [
+                Paragraph("TOTAL GERAL DO SERVIÇO:", st_lbl_r),
+                "", "", "",
+                _money_cell(total_geral, 54, bold=True),
+                "",
+            ]
+        )
+
+        # Linha: TOTAL COM DESCONTO DE (0%)
+        data.append(
+            [
+                Paragraph(f"TOTAL COM DESCONTO DE {fmt_number(desconto_pct)}%:", st_lbl_r),
+                "", "", "",
+                _money_cell(total_com_desc, 54, bold=True),
+                "",
+            ]
+        )
+
+        tbl = Table(data, colWidths=col_widths)
+
+        first_item_row = 2
+        last_item_row = first_item_row + (max_rows - 1)
+        total_row_1 = last_item_row + 1
+        total_row_2 = last_item_row + 2
+
+        tbl.setStyle(
+            TableStyle(
+                [
+                    # Bordas fortes
+                    ("GRID", (0, 0), (-1, -1), 1.0, theme["GRID"]),
+                    ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.2, theme["BLACK"]),
+
+                    # Título
+                    ("SPAN", (0, 0), (-1, 0)),
+                    ("BACKGROUND", (0, 0), (-1, 0), theme["TITLE_BG"]),
+                    ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+
+                    # Cabeçalho
+                    ("BACKGROUND", (0, 1), (-1, 1), theme["LIGHT_BLUE"]),
+                    ("ALIGN", (0, 1), (-1, 1), "CENTER"),
+                    ("VALIGN", (0, 1), (-1, 1), "MIDDLE"),
+
+                    # QTD azul (somente corpo)
+                    ("BACKGROUND", (2, first_item_row), (2, last_item_row), theme["LIGHT_BLUE"]),
+
+                    # Totais: spans conforme solicitado
+                    ("SPAN", (0, total_row_1), (3, total_row_1)),  # texto 0..3
+                    ("SPAN", (4, total_row_1), (5, total_row_1)),  # valor 4..5
+                    ("SPAN", (0, total_row_2), (3, total_row_2)),
+                    ("SPAN", (4, total_row_2), (5, total_row_2)),
+
+                    # Totais: alinhamento e fundo (modelo)
+                    ("ALIGN", (0, total_row_1), (3, total_row_2), "RIGHT"),
+                    ("ALIGN", (4, total_row_1), (5, total_row_2), "RIGHT"),
+                    ("VALIGN", (0, first_item_row), (-1, total_row_2), "MIDDLE"),
+                    ("BACKGROUND", (0, total_row_1), (3, total_row_2), theme["TITLE_BG"]),
+                    ("BACKGROUND", (4, total_row_1), (5, total_row_2), theme["LIGHT_GRAY"]),
+
+                    # Linhas mais baixas (paddings menores)
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    
+                    # Borda inferior na cor preta na linha 16
+                    ("LINEBELOW", (0, last_item_row), (-1, last_item_row), 1.2, theme["BLACK"]),
+                ]
+            )
+        )
+
+        return tbl
+
+    # ✅ adiciona a tabela no fluxo do PDF
+    tbl_desc = _build_tbl_descricao_servico(itens)
+    elements.append(tbl_desc)
     elements.append(Spacer(1, 8))
 
     # Build com frame externo em todas as páginas
