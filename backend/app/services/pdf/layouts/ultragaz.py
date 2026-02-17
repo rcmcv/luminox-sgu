@@ -66,7 +66,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     FONT = "Calibri"
     FONT_BOLD = "Calibri-Bold"
 
-    BASE_SIZE = 9         # ✅ base do layout Ultragaz
+    BASE_SIZE = 9          # ✅ base do layout Ultragaz
     BASE_LEADING = 13      # ✅ entrelinhas confortável p/ 9
 
     TITLE_SIZE = 16        # ✅ "USINAGEM LUMINOX" maior
@@ -223,11 +223,7 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
 
     # =========================================================
     # 2) CABEÇALHO - TABELA INFERIOR (4 COLUNAS / 2 LINHAS)
-    #    (Rótulos em negrito + fundo cinza claro nos rótulos)
     # =========================================================
-    # Modelo da imagem:
-    # Linha 1: PROPOSTA DE SERVIÇO N° | valor | DATA DE EMISSÃO | valor
-    # Linha 2: REVISÃO N°            | valor | VALIDADE ...     | valor
     bottom_tbl_data = [
         [
             Paragraph("PROPOSTA DE SERVIÇO N° :", st_lbl_r),
@@ -284,15 +280,107 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
 
     # Coloca o cabeçalho como “um bloco”
     elements.extend(header_stack)
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 4))
 
     # =========================================================
-    # A PARTIR DAQUI: conteúdo (vamos ajustar depois junto contigo)
+    # DADOS DO CLIENTE (ULTRAGAZ)
     # =========================================================
-    # Placeholder simples pra não quebrar enquanto a gente constrói as outras seções
-    elements.append(Paragraph("Conteúdo ULTRAGAZ (em construção)", st_small_b))
-    elements.append(Spacer(1, 6))
-    elements.append(Paragraph(f"Cliente: {escape(cli_nome)}", st_small))
+
+    # Puxando campos do cliente (use os nomes que já existem no seu model)
+    cli_nome = getattr(cliente, "nome", None) or getattr(cliente, "name", None) or "-"
+    cli_cnpj = getattr(cliente, "cnpj", None) or "-"
+    cli_ie = getattr(cliente, "ie", None) or getattr(cliente, "inscricao_estadual", None) or "-"
+    cli_cep = getattr(cliente, "cep", None) or "-"
+    cli_endereco = getattr(cliente, "endereco", None) or "-"
+    cli_bairro = getattr(cliente, "bairro", None) or "-"
+    cli_cidade = getattr(cliente, "cidade", None) or "-"
+    cli_estado = getattr(cliente, "estado", None) or "-"
+    cli_telefone = getattr(cliente, "telefone", None) or getattr(cliente, "phone", None) or "-"
+    cli_email = getattr(cliente, "email", None) or "-"
+    # se existir lista de emails no seu banco, ajustamos depois
+
+    # Cores (reaproveite as mesmas do arquivo)
+    bg_header = colors.HexColor("#D9D9D9")   # faixa do título
+    bg_body = colors.HexColor("#EEEEEE")     # fundo do corpo
+
+    # Estilos: rótulo (bold right) e valor (base)
+    # (Você já tem st_lbl_r e st_small / st_small_b da refatoração)
+    st_lbl = st_lbl_r         # bold + RIGHT
+    st_val = st_small         # base
+
+    # ---- Linha de título (span em 4 colunas) ----
+    title_row = [Paragraph("DADOS DO CLIENTE", st_small_b_center), "", "", ""]
+
+    # ---- Corpo: 2 colunas “espelhadas” ----
+    # Estrutura: [label_left, value_left, label_right, value_right]
+    rows = [
+        title_row,
+        [Paragraph("CLIENTE:", st_lbl), Paragraph(escape(str(cli_nome)), st_val),
+        Paragraph("I.E:", st_lbl), Paragraph(escape(str(cli_ie)), st_val)],
+
+        [Paragraph("CNPJ:", st_lbl), Paragraph(escape(str(cli_cnpj)), st_val),
+        Paragraph("CEP:", st_lbl), Paragraph(escape(str(cli_cep)), st_val)],
+
+        [Paragraph("ENDEREÇO:", st_lbl), Paragraph(escape(str(cli_endereco)), st_val),
+        Paragraph("BAIRRO:", st_lbl), Paragraph(escape(str(cli_bairro)), st_val)],
+
+        [Paragraph("CIDADE:", st_lbl), Paragraph(escape(str(cli_cidade)), st_val),
+        Paragraph("ESTADO:", st_lbl), Paragraph(escape(str(cli_estado)), st_val)],
+
+        [Paragraph("CONTATO:", st_lbl), Paragraph(escape(str(getattr(cliente, "contato", None) or "-")), st_val),
+        Paragraph("TELEFONE:", st_lbl), Paragraph(escape(str(cli_telefone)), st_val)],
+
+        [Paragraph("E-MAILS:", st_lbl), Paragraph(escape(str(cli_email)), st_val),
+        Paragraph("E-MAILS:", st_lbl), Paragraph(escape(str(cli_email)), st_val)],
+    ]
+
+    # Larguras (total 190mm): [label, value] + [label, value]
+    # Ajustadas para ficar bem parecido com o modelo
+    col_widths = [28 * mm, None, 28 * mm, None]  # soma = 190mm
+
+    tbl_cli = Table(rows, colWidths=col_widths)
+    tbl_cli.setStyle(
+        TableStyle(
+            [
+                # BOX externo
+                ("BOX", (0, 0), (-1, -1), 1.2, colors.black),
+
+                # Título mesclado
+                ("SPAN", (0, 0), (3, 0)),
+                ("BACKGROUND", (0, 0), (3, 0), bg_header),
+                ("ALIGN", (0, 0), (3, 0), "CENTER"),
+                ("VALIGN", (0, 0), (3, 0), "MIDDLE"),
+
+                # Linha separando header do corpo
+                ("LINEBELOW", (0, 0), (3, 0), 1.2, colors.black),
+
+                # ✅ Fundo do corpo: valores brancos
+                ("BACKGROUND", (0, 1), (3, -1), colors.white),
+
+                # ✅ Fundo cinza só nos rótulos (col 0 e col 2)
+                ("BACKGROUND", (0, 1), (0, -1), bg_body),
+                ("BACKGROUND", (2, 1), (2, -1), bg_body),
+
+                # Divisor vertical central (entre col 1 e col 2)
+                #("LINEAFTER", (1, 1), (1, -1), 1.2, colors.black),
+
+                # Alinhamentos
+                ("ALIGN", (0, 1), (0, -1), "RIGHT"),
+                ("ALIGN", (2, 1), (2, -1), "RIGHT"),
+                ("ALIGN", (1, 1), (1, -1), "LEFT"),
+                ("ALIGN", (3, 1), (3, -1), "LEFT"),
+
+                # Padding (altura enxuta)
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    
+    elements.append(tbl_cli)
+    elements.append(Spacer(1, 8))
 
     # Build com frame externo em todas as páginas
     doc.build(elements, onFirstPage=_draw_page_frame, onLaterPages=_draw_page_frame)
