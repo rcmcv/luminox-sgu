@@ -25,13 +25,20 @@ from ..shared.styles import PDF_FORMAT_ULTRAGAZ
 def _register_calibri():
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))  # .../backend/app
     fonts_dir = os.path.join(base_dir, "assets", "fonts")
+
     calibri = os.path.join(fonts_dir, "calibri.ttf")
     calibri_b = os.path.join(fonts_dir, "calibrib.ttf")
+    calibri_i = os.path.join(fonts_dir, "calibrii.ttf")
+    calibri_bi = os.path.join(fonts_dir, "calibriz.ttf")
 
     if os.path.exists(calibri):
         pdfmetrics.registerFont(TTFont("Calibri", calibri))
     if os.path.exists(calibri_b):
         pdfmetrics.registerFont(TTFont("Calibri-Bold", calibri_b))
+    if os.path.exists(calibri_i):
+        pdfmetrics.registerFont(TTFont("Calibri-Italic", calibri_i))
+    if os.path.exists(calibri_bi):
+        pdfmetrics.registerFont(TTFont("Calibri-BoldItalic", calibri_bi))
 
 _register_calibri()
 
@@ -74,11 +81,13 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     # ----------------------------
     FONT = "Calibri"
     FONT_BOLD = "Calibri-Bold"
+    FONT_ITALIC = "Calibri-Italic"
+    FONT_BOLD_ITALIC = "Calibri-BoldItalic"
 
-    BASE_SIZE = 9          # ✅ base do layout Ultragaz
-    BASE_LEADING = 13      # ✅ entrelinhas confortável p/ 9
+    BASE_SIZE = 9
+    BASE_LEADING = 13
 
-    TITLE_SIZE = 16        # ✅ "USINAGEM LUMINOX" maior
+    TITLE_SIZE = 16
     TITLE_LEADING = 20
 
     def _make_styles():
@@ -89,11 +98,13 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
             fontSize=BASE_SIZE,
             leading=BASE_LEADING,
         )
+        italic = ParagraphStyle(name="Italic", parent=base, fontName=FONT_ITALIC)
         bold = ParagraphStyle(name="Bold", parent=base, fontName=FONT_BOLD)
 
-        center = ParagraphStyle(name="Center", parent=base, alignment=1)  # CENTER
-        right = ParagraphStyle(name="Right", parent=base, alignment=2)    # RIGHT
+        center = ParagraphStyle(name="Center", parent=base, alignment=1)  
+        right = ParagraphStyle(name="Right", parent=base, alignment=2)
 
+        bold_italic = ParagraphStyle(name="BoldItalic", parent=base, fontName=FONT_BOLD_ITALIC)
         bold_center = ParagraphStyle(name="BoldCenter", parent=bold, alignment=1)
         bold_right = ParagraphStyle(name="BoldRight", parent=bold, alignment=2)
 
@@ -103,14 +114,16 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
             fontName=FONT_BOLD,
             fontSize=TITLE_SIZE,
             leading=TITLE_LEADING,
-            alignment=0,  # LEFT
+            alignment=0,
         )
 
         return {
             "base": base,
             "bold": bold,
+            "italic": italic,
             "center": center,
             "right": right,
+            "bold_italic": bold_italic,
             "bold_center": bold_center,
             "bold_right": bold_right,
             "title": title,
@@ -121,8 +134,10 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
     # Mantém os mesmos nomes que você já usa no arquivo (compatível com seu código atual)
     st_small = ST["base"]
     st_small_b = ST["bold"]
+    st_small_i = ST["italic"]
     st_small_center = ST["center"]
     st_small_right = ST["right"]
+    st_small_bi = ST["bold_italic"]
     st_small_b_right = ST["bold_right"]
     st_small_b_center = ST["bold_center"]
 
@@ -177,6 +192,71 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
         canvas.setStrokeColor(theme["BLACK"])
         canvas.rect(x, y, w, h, stroke=1, fill=0)
         canvas.restoreState()
+
+    # =========================================================
+    # FUNÇÃO: RODAPÉ (ASSINATURAS) - modelo Ultragaz
+    # =========================================================
+    def _draw_footer_assinaturas(canvas, doc) -> None:
+        """
+        Assinaturas conforme modelo:
+        - linha horizontal acima do nome
+        - Nome: negrito + itálico (centralizado)
+        - Cargo/Empresa: normal (centralizado)
+        - Contratada/Contratante: itálico (centralizado)
+        """
+        canvas.saveState()
+
+        # Área útil (dentro das margens)
+        left = doc.leftMargin
+        right = doc.pagesize[0] - doc.rightMargin
+        width = right - left
+
+        # Define 2 colunas com espaçamento central
+        gap = 24 * mm
+        col_w = (width - gap) / 2.0
+
+        x_left = left
+        x_right = left + col_w + gap
+
+        # Centros das colunas
+        cx_left = x_left + col_w / 2.0
+        cx_right = x_right + col_w / 2.0
+
+        # Posição vertical (ajuste fino)
+        # (sobe/desce aqui se precisar encaixar no box)
+        y_base = doc.bottomMargin + 1 * mm
+
+        # Linha horizontal (acima do nome)
+        line_y = y_base + 12 * mm
+        line_pad = 10 * mm  # margem interna da linha na coluna
+
+        canvas.setLineWidth(1.0)
+        canvas.setStrokeColor(theme["BLACK"])
+        canvas.line(x_left + line_pad, line_y, x_left + col_w - line_pad, line_y)
+        canvas.line(x_right + line_pad, line_y, x_right + col_w - line_pad, line_y)
+
+        # Textos (fontes)
+        # Nome: bold + italic
+        canvas.setFillColor(theme["BLACK"])
+        canvas.setFont("Calibri-BoldItalic", 9)
+        canvas.drawCentredString(cx_left, y_base + 9 * mm, "Fco Jackson Almeida de Oliveira")
+        canvas.drawCentredString(cx_right, y_base + 9 * mm, "Suyane Gaspar")
+
+        # Cargo/Empresa: normal
+        canvas.setFont("Calibri", 9)
+        canvas.drawCentredString(cx_left, y_base + 5 * mm, "Diretor Técnico - LUMINOX")
+        canvas.drawCentredString(cx_right, y_base + 5 * mm, "BAIHANA DISTRIBUIDORA DE GAS LTDA")
+
+        # Contratada/Contratante: italic
+        canvas.setFont("Calibri-Italic", 9)
+        canvas.drawCentredString(cx_left, y_base + 2 * mm, "Contratada")
+        canvas.drawCentredString(cx_right, y_base + 2 * mm, "Contratante")
+
+        canvas.restoreState()
+
+    def _on_page(canvas, doc):
+        _draw_page_frame(canvas, doc)
+        _draw_footer_assinaturas(canvas, doc)
 
     # =========================================================
     # 1) CABEÇALHO - TABELA SUPERIOR (2 COLUNAS)
@@ -573,12 +653,133 @@ def render_pdf_ultragaz(orcamento: Any, itens: Iterable[Any], cliente: Any) -> b
 
         return tbl
 
+    # =========================================================
+    # DESCRITIVO (ULTRAGAZ) - vem de orcamento.observacoes
+    # =========================================================
+    def _build_tbl_descritivo() -> Table:
+        usable_w_inset = content_w - (4 * mm)  # inset 2mm cada lado
+
+        obs = (
+            getattr(orcamento, "observacoes", None)
+            or getattr(orcamento, "observacao", None)
+            or getattr(orcamento, "obs", None)
+            or ""
+        )
+        obs = str(obs or "").strip()
+
+        data = [
+            [Paragraph("DESCRITIVO", st_small_b_center)],
+            [Paragraph(escape(obs) if obs else "&nbsp;", st_small)],
+        ]
+
+        tbl = Table(data, colWidths=[usable_w_inset], rowHeights=[5 * mm, 18 * mm])
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
+                    ("BACKGROUND", (0, 0), (-1, 0), theme["TITLE_BG"]),
+                    ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.2, theme["BLACK"]),
+
+                    ("VALIGN", (0, 1), (-1, 1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+        return tbl
+
+    # =========================================================
+    # PRAZOS E CONDIÇÕES DE PAGAMENTO (ULTRAGAZ)
+    # =========================================================
+    def _build_tbl_prazos_pagamento() -> Table:
+        usable_w_inset = content_w - (4 * mm)  # inset 2mm cada lado
+
+        # Defaults por enquanto (até entrar no formulário)
+        prazo_exec_dias = (
+            getattr(orcamento, "prazo_execucao_dias", None)
+            or getattr(orcamento, "prazo_execucao", None)
+            or 30
+        )
+        cond_pag_dias = (
+            getattr(orcamento, "condicao_pagamento_dias", None)
+            or getattr(orcamento, "condicao_pagamento", None)
+            or 30
+        )
+
+        prazo_exec_dias = int(to_float(prazo_exec_dias) or 30)
+        cond_pag_dias = int(to_float(cond_pag_dias) or 30)
+
+        # Texto (sem itálico)
+        txt_prazo = f"{prazo_exec_dias} dias, após a aprovação da proposta, a contar do recebimento do material."
+        txt_coleta = "Coleta e entrega inclusos na proposta. Dispensamos assinaturas na proposta, se enviado por e-mail."
+        txt_pagto = f"{cond_pag_dias} dias, através de transferência bancária."
+
+        # 2 colunas (rótulo | texto)
+        # Ajuste de largura para ficar parecido com o modelo
+        col_label = 38 * mm
+        col_text = usable_w_inset - col_label
+
+        data = [
+            # Linha 0: título (span)
+            [Paragraph("PRAZOS E CONDIÇÕES DE PAGAMENTO", st_small_b_center), ""],
+
+            # Linhas 1..3: 2 colunas, 3 linhas (sem grid)
+            [Paragraph("Prazo de execução:", st_small_bi), Paragraph(escape(txt_prazo), st_small_i)],
+            [Paragraph("Condição de pagamento:", st_small_bi), Paragraph(escape(txt_pagto), st_small_i)],
+            ["", Paragraph(escape(txt_coleta), st_small_i)],
+        ]
+
+        tbl = Table(
+            data,
+            colWidths=[col_label, col_text],
+            rowHeights=[5 * mm, None, None, None],  # título fixo, restante automático
+        )
+
+        tbl.setStyle(
+            TableStyle(
+                [
+                    # Borda externa (sem GRID interno)
+                    ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
+
+                    # Título
+                    ("SPAN", (0, 0), (-1, 0)),
+                    ("BACKGROUND", (0, 0), (-1, 0), theme["TITLE_BG"]),
+                    ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.2, theme["BLACK"]),
+
+                    # Conteúdo (linhas 1..3)
+                    ("BACKGROUND", (0, 1), (0, -1), theme["LIGHT_GRAY"]),
+                    ("VALIGN", (0, 1), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+
+                    # Alinhamento
+                    ("ALIGN", (0, 1), (0, -1), "LEFT"),
+                    ("ALIGN", (1, 1), (1, -1), "LEFT"),
+                ]
+            )
+        )
+
+        return tbl
+
     # ✅ adiciona a tabela no fluxo do PDF
     tbl_desc = _build_tbl_descricao_servico(itens)
     elements.append(tbl_desc)
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 4))
+
+    elements.append(_build_tbl_descritivo())
+    elements.append(Spacer(1, 4))
+    
+    elements.append(_build_tbl_prazos_pagamento())
 
     # Build com frame externo em todas as páginas
-    doc.build(elements, onFirstPage=_draw_page_frame, onLaterPages=_draw_page_frame)
+    doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
 
     return buf.getvalue()
