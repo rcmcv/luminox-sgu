@@ -5,40 +5,31 @@ from typing import Any, Iterable
 import os
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Image
-
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 from ..shared.helpers import (
     escape,
     fmt_date,
-    fmt_number,
     fmt_money_no_prefix,
+    fmt_number,
     sum_totais_itens,
     to_float,
 )
-
-# Se vocês já tiverem um formato próprio no shared.styles no futuro,
-# é só trocar aqui. Por enquanto, usamos A4 e margens seguras.
-# (não mexe no PADRÃO e não depende de constante nova)
-_DEFAULT_PAGE_SIZE = A4
-_DEFAULT_MARGINS = {
-    "left": 10 * mm,
-    "right": 10 * mm,
-    "top": 10 * mm,
-    "bottom": 10 * mm,
-}
+from ..shared.styles import PDF_FORMAT_ACO_CEARENSE
 
 
+# =========================================================
+# FONTES (mesmo padrão do ultragaz.py)
+# =========================================================
 def _register_calibri() -> None:
     """
-    Registra Calibri/Calibri Bold/Italic/BoldItalic (mesmo padrão do ultragaz.py).
-    Mantém fallback automático se os arquivos não existirem.
+    Registra Calibri/Calibri Bold/Italic/BoldItalic.
+    Mantém fallback automático se os arquivos não existirem (não quebra PDF).
     """
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))  # .../backend/app
     fonts_dir = os.path.join(base_dir, "assets", "fonts")
@@ -61,81 +52,77 @@ def _register_calibri() -> None:
 _register_calibri()
 
 
-def _build_logo_aco_cearense(width_mm: float = 40.0) -> Image | None:
+# =========================================================
+# ASSET: logo específica do layout (sem mexer no shared.assets)
+# =========================================================
+def _build_aco_logo_image(width_mm: float = 40.0) -> Image | None:
     """
-    Carrega a logo do Grupo Aço Cearense a partir da mesma pasta do layout:
+    Cria um Image (ReportLab) com largura em mm e altura proporcional,
+    usando a logo do cliente Aço Cearense que fica na MESMA pasta do layout.
+
+    Arquivo esperado:
     backend/app/services/pdf/layouts/logo_grupo_aco_cearense.png
 
-    Se não existir, retorna None (sem quebrar o PDF).
+    Retorna None se não existir (não quebra o PDF).
     """
-    here = os.path.dirname(__file__)
-    logo_path = os.path.join(here, "logo_grupo_aco_cearense.png")
+    logo_path = os.path.join(os.path.dirname(__file__), "logo_grupo_aco_cearense.png")
     if not os.path.exists(logo_path):
         return None
 
-    try:
-        reader = ImageReader(logo_path)
-        iw, ih = reader.getSize()
-        w = width_mm * mm
-        h = (w * ih) / float(iw)
-        img = Image(logo_path, width=w, height=h)
-        return img
-    except Exception:
-        return None
+    # Mantém proporção usando ImageReader (mesmo método do shared.assets)
+    ir = ImageReader(str(logo_path))
+    px_w, px_h = ir.getSize()
+
+    w = width_mm * mm
+    h = w * (px_h / float(px_w))
+
+    img = Image(str(logo_path), width=w, height=h)
+    img.hAlign = "LEFT"
+    return img
 
 
 def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) -> bytes:
     """
     Layout AÇO CEARENSE (conforme modelo "Anexo V - Formulário de Orçamento").
 
-    Estrutura:
-    - Título superior centralizado
-    - Box principal com borda
-      - Linha 1: logo (esq) + título do formulário (dir)
-      - Cabeçalho com campos (Fornecedor, Cliente, Contatos, etc.)
-      - Área grande de descrição (texto vindo do orçamento)
-      - Tabela "Homem Hora / Maquina" (10 linhas)
-      - Tabela "Material ( Matéria-Prima)" (8 linhas)
-      - Faixa "Valor Total do Orçamento" + total
-      - Faixa "Aprovação do Orçamento" + 3 assinaturas
+    Objetivo desta etapa:
+    - implementar o layout usando o MESMO padrão de estrutura do ultragaz.py:
+      theme centralizado, registro de fontes centralizado, helpers/shared, estilos no topo.
+    - manter linhas fixas nas tabelas (serviço e material)
     """
     buf = BytesIO()
+    fmt = PDF_FORMAT_ACO_CEARENSE
 
-    # =========================
-    # TEMA (CORES E FONTES)
-    # =========================
-    theme = {
-        "BLACK": colors.black,
-        "WHITE": colors.white,
-        "BLUE": colors.HexColor("#002060"),  # títulos/faixas
-        "GRID": colors.black,                # no modelo, linhas bem “pretas”
-    }
-
-    # =========================
-    # DOC
-    # =========================
     doc = SimpleDocTemplate(
         buf,
-        pagesize=_DEFAULT_PAGE_SIZE,
-        leftMargin=_DEFAULT_MARGINS["left"],
-        rightMargin=_DEFAULT_MARGINS["right"],
-        topMargin=_DEFAULT_MARGINS["top"],
-        bottomMargin=_DEFAULT_MARGINS["bottom"],
-        title="Orçamento - Aço Cearense",
+        pagesize=fmt.page_size,
+        leftMargin=fmt.left_margin,
+        rightMargin=fmt.right_margin,
+        topMargin=fmt.top_margin,
+        bottomMargin=fmt.bottom_margin,
+        title="Orçamento/Medição - Aço Cearense",
         author="Usinagem Luminox",
     )
 
+    # =========================================================
+    # TEMA / CORES (mesmo estilo do ultragaz.py)
+    # =========================================================
+    theme = {
+        "BLACK": colors.black,
+        "WHITE": colors.white,
+        "GRID": colors.black,  # no modelo, o grid é bem preto
+        "TITLE_BLUE": colors.HexColor("#002060"),  # cor dos títulos (cliente)
+    }
+
     styles = getSampleStyleSheet()
 
-    # =========================
-    # STYLES CENTRALIZADOS
-    # =========================
+    # =========================================================
+    # STYLES (centralizados no topo)
+    # =========================================================
     FONT = "Calibri"
     FONT_B = "Calibri-Bold"
-    FONT_I = "Calibri-Italic"
-    FONT_BI = "Calibri-BoldItalic"
 
-    BASE = ParagraphStyle(
+    st_base = ParagraphStyle(
         name="Base",
         parent=styles["Normal"],
         fontName=FONT,
@@ -143,55 +130,62 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         leading=11,
         textColor=theme["BLACK"],
     )
-    BASE_C = ParagraphStyle(name="BaseC", parent=BASE, alignment=1)
-    BASE_R = ParagraphStyle(name="BaseR", parent=BASE, alignment=2)
+    st_base_c = ParagraphStyle(name="BaseC", parent=st_base, alignment=1)
+    st_base_r = ParagraphStyle(name="BaseR", parent=st_base, alignment=2)
 
-    BOLD = ParagraphStyle(name="Bold", parent=BASE, fontName=FONT_B)
-    BOLD_C = ParagraphStyle(name="BoldC", parent=BOLD, alignment=1)
-    BOLD_R = ParagraphStyle(name="BoldR", parent=BOLD, alignment=2)
+    st_small = ParagraphStyle(
+        name="Small",
+        parent=st_base,
+        fontSize=9,
+        leading=10.5,
+    )
+    st_small_c = ParagraphStyle(name="SmallC", parent=st_small, alignment=1)
+    st_small_r = ParagraphStyle(name="SmallR", parent=st_small, alignment=2)
 
-    SMALL = ParagraphStyle(name="Small", parent=BASE, fontSize=8.5, leading=10.5)
-    SMALL_C = ParagraphStyle(name="SmallC", parent=SMALL, alignment=1)
-    SMALL_R = ParagraphStyle(name="SmallR", parent=SMALL, alignment=2)
-    SMALL_B = ParagraphStyle(name="SmallB", parent=SMALL, fontName=FONT_B)
+    st_bold = ParagraphStyle(name="Bold", parent=st_base, fontName=FONT_B)
+    st_bold_c = ParagraphStyle(name="BoldC", parent=st_bold, alignment=1)
+    st_bold_r = ParagraphStyle(name="BoldR", parent=st_bold, alignment=2)
 
-    TITLE_TOP = ParagraphStyle(
+    st_title_top = ParagraphStyle(
         name="TitleTop",
-        parent=BOLD_C,
+        parent=st_bold_c,
         fontSize=11,
         leading=13,
     )
 
-    BAR_WHITE = ParagraphStyle(
+    # Texto branco usado nas faixas azuis
+    st_bar_white = ParagraphStyle(
         name="BarWhite",
-        parent=BOLD_C,
-        fontSize=10,
+        parent=st_bold_c,
+        fontSize=9,
         leading=12,
         textColor=theme["WHITE"],
     )
 
-    # =========================
-    # HELPERS (campos)
-    # =========================
+    # =========================================================
+    # Helpers internos (seguem padrão simples, sem dependências extras)
+    # =========================================================
     def _get(obj: Any, *names: str, default: Any = "-") -> Any:
+        """
+        Busca o primeiro atributo existente em `obj` na lista `names`.
+        Evita ifs repetidos e mantém o layout tolerante a pequenas variações de schema.
+        """
         for n in names:
             v = getattr(obj, n, None)
             if v is not None and v != "":
                 return v
         return default
 
-    def _money_cell(valor: Any, bold: bool = False) -> Table:
+    def _money_cell(valor: Any) -> Table:
         """
-        Célula estilo modelo: 'R$' à esquerda e valor à direita.
+        Célula estilo "R$ | valor" com alinhamento do valor à direita.
+        (Mantém a apresentação do modelo)
         """
         num = fmt_money_no_prefix(valor)
-        st_rs = SMALL_B if bold else SMALL
-        st_num = SMALL_B if bold else SMALL
-        st_num_r = ParagraphStyle("NumR", parent=st_num, alignment=2)
-
-        rs_w = 7 * mm
-        # largura do valor se ajusta “no automático” pela tabela pai; aqui só formatamos alinhamentos
-        t = Table([[Paragraph("R$", st_rs), Paragraph(escape(num), st_num_r)]], colWidths=[rs_w, None])
+        t = Table(
+            [[Paragraph("R$", st_small), Paragraph(escape(num), st_small_r)]],
+            colWidths=[7 * mm, None],
+        )
         t.setStyle(
             TableStyle(
                 [
@@ -205,9 +199,9 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         )
         return t
 
-    # =========================
-    # DADOS PRINCIPAIS (modelo)
-    # =========================
+    # =========================================================
+    # DADOS DO FORMULÁRIO
+    # =========================================================
     numero = _get(orcamento, "numero", "codigo", "id", default="-")
     data_emissao = _get(orcamento, "criado_em", "created_at", default=None)
     data_emissao_txt = fmt_date(data_emissao)
@@ -223,7 +217,6 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         prazo_entrega_dias = 10
 
     necessario_desenho = _get(orcamento, "necessario_desenho", "precisa_desenho", default=None)
-    # Se não vier nada do banco, mantém em branco (ninguém marcado)
     if necessario_desenho in (True, 1, "1", "true", "True", "SIM", "Sim", "sim"):
         desenho_txt = "Sim ( X )        Não (   )"
     elif necessario_desenho in (False, 0, "0", "false", "False", "NAO", "Não", "nao", "não"):
@@ -231,41 +224,50 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
     else:
         desenho_txt = "Sim (   )        Não (   )"
 
-    # Descrição grande (usa observações; fallback para campos alternativos)
-    desc_grande = (
-        str(_get(orcamento, "observacoes", "observacao", "descricao", "descricao_servico", default="")).strip()
-    )
+    # Texto grande central do formulário (no modelo é um campo grande)
+    desc_grande = str(_get(orcamento, "observacoes", "observacao", "descricao", "descricao_servico", default="")).strip()
 
-    # =========================
-    # SPLIT ITENS: SERVIÇO x MATERIAL (heurística)
-    # =========================
     itens_list = list(itens or [])
 
+    # =========================================================
+    # Heurística simples para separar Serviço vs Material
+    # (podemos ajustar depois quando vocês definirem regra oficial)
+    # =========================================================
     def _is_material(it: Any) -> bool:
         tipo = str(_get(it, "tipo_servico", "tipo", "categoria", default="")).upper()
-        un = str(_get(it, "unidade", "unidade_sigla", "unidade_medida", default="")).lower()
+        unidade = str(_get(it, "unidade", "unidade_sigla", "unidade_medida", default="")).lower()
+
         if "MATER" in tipo:
             return True
-        if un in ("kg", "quilo", "quilos"):
+        if unidade in ("kg", "quilo", "quilos"):
             return True
         return False
 
     itens_serv = [i for i in itens_list if not _is_material(i)]
     itens_mat = [i for i in itens_list if _is_material(i)]
 
-    # =========================
-    # COMPONENTES (tabelas)
-    # =========================
-    content_w = doc.pagesize[0] - doc.leftMargin - doc.rightMargin
+    # =========================================================
+    # LARGURA ÚTIL (para tabelas)
+    # =========================================================
+    content_w = fmt.page_size[0] - fmt.left_margin - fmt.right_margin
 
-    # --- Linha topo do box: logo + título do formulário ---
-    logo = _build_logo_aco_cearense(40.0)
-    title_form = Paragraph("Orçamento/Medição de Serviço de Usinagem", BOLD_C)
+    # =========================================================
+    # 1) TÍTULO SUPERIOR
+    # =========================================================
+    elements: list[Any] = []
+    elements.append(Paragraph("Anexo V - Formulário de Orçamento", st_title_top))
+    elements.append(Spacer(1, 4))
+
+    # =========================================================
+    # 2) CABEÇALHO (logo + título)
+    # =========================================================
+    logo = _build_aco_logo_image(40.0)
+    title_form = Paragraph("Orçamento/Medição de Serviço de Usinagem", st_bold_c)
 
     top_header = Table(
         [[logo if logo else "", title_form]],
         colWidths=[55 * mm, content_w - (55 * mm)],
-        rowHeights=[14 * mm],
+        rowHeights=[10 * mm],
     )
     top_header.setStyle(
         TableStyle(
@@ -281,33 +283,46 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
             ]
         )
     )
+    elements.append(top_header)
 
-    # --- Grade de campos (Fornecedor/Cliente/Contato/Solicitante/Orçamento/Data etc) ---
-    # 2 blocos horizontais: esquerda (labels/valores) e direita (N. Orç / Data / etc)
-    # Layout do modelo:
-    # Fornecedor | USINAGEM LUMINOX || N. Orç: 002/26 | 10/02/2026
-    # Cliente    | ACO CEARENSE     || Necessário desenho? | Sim... Não...
-    # Contato... | JACKSON          || (vazio/mesmo campo do desenho)
-    # Solicit... | CASSIA ...       || Prazo entrega ...: 10 dias
+    # =========================================================
+    # 3) GRADE DE CAMPOS (conforme modelo)
+    # =========================================================
     grid_cols = [25 * mm, 85 * mm, 22 * mm, content_w - (25 + 85 + 22) * mm]
     header_grid = Table(
         [
-            [Paragraph("Fornecedor:", SMALL), Paragraph("USINAGEM LUMINOX", SMALL_B),
-             Paragraph("N. Orç:", SMALL), Paragraph(f"{escape(str(numero))}            {escape(data_emissao_txt)}", SMALL)],
-            [Paragraph("Cliente:", SMALL), Paragraph(escape(str(cli_nome)), SMALL_B),
-             Paragraph("Necessário Desenho?", SMALL), Paragraph(escape(desenho_txt), SMALL)],
-            [Paragraph("Contato Fornecedor:", SMALL), Paragraph(escape(str(contato_fornecedor)), SMALL_B),
-             Paragraph("", SMALL), Paragraph("", SMALL)],
-            [Paragraph("Solicitante:", SMALL), Paragraph(escape(str(solicitante)), SMALL_B),
-             Paragraph("Prazo de Entrega (em dias):", SMALL), Paragraph(escape(f"{prazo_entrega_dias} dias"), SMALL_B)],
+            [
+                Paragraph("Fornecedor:", st_small),
+                Paragraph("USINAGEM LUMINOX", st_bold),
+                Paragraph("N. Orç:", st_small),
+                Paragraph(f"{escape(str(numero))}            {escape(data_emissao_txt)}", st_small),
+            ],
+            [
+                Paragraph("Cliente:", st_small),
+                Paragraph(escape(str(cli_nome)), st_bold),
+                Paragraph("Necessário Desenho?", st_small),
+                Paragraph(escape(desenho_txt), st_small),
+            ],
+            [
+                Paragraph("Contato Fornecedor:", st_small),
+                Paragraph(escape(str(contato_fornecedor)), st_bold),
+                Paragraph("", st_small),
+                Paragraph("", st_small),
+            ],
+            [
+                Paragraph("Solicitante:", st_small),
+                Paragraph(escape(str(solicitante)), st_bold),
+                Paragraph("Prazo de Entrega (em dias):", st_small),
+                Paragraph(escape(f"{prazo_entrega_dias} dias"), st_bold),
+            ],
         ],
         colWidths=grid_cols,
-        rowHeights=[7 * mm, 7 * mm, 7 * mm, 7 * mm],
+        rowHeights=[5 * mm, 5 * mm, 5 * mm, 5 * mm],
     )
     header_grid.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 1.0, theme["BLACK"]),
+                ("GRID", (0, 0), (-1, -1), 1.0, theme["GRID"]),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -316,10 +331,13 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
             ]
         )
     )
+    elements.append(header_grid)
 
-    # --- Área grande de descrição (uma linha de texto + campo grande) ---
+    # =========================================================
+    # 4) CAIXA GRANDE DE DESCRIÇÃO
+    # =========================================================
     desc_tbl = Table(
-        [[Paragraph(escape(desc_grande) if desc_grande else "&nbsp;", SMALL)]],
+        [[Paragraph(escape(desc_grande) if desc_grande else "&nbsp;", st_small)]],
         colWidths=[content_w],
         rowHeights=[62 * mm],
     )
@@ -335,23 +353,23 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
             ]
         )
     )
+    elements.append(desc_tbl)
 
+    # =========================================================
+    # 5) TABELA SERVIÇOS (Homem Hora / Maquina) - 10 linhas fixas
+    # =========================================================
     def _build_tbl_servicos() -> Table:
-        # colunas aproximadas do modelo
         col_w = [20 * mm, 75 * mm, 25 * mm, 22 * mm, content_w - (20 + 75 + 25 + 22) * mm]
-        # na prática, a última coluna fica mais larga (onde entra a mini-tabela com R$ e valor)
 
         data: list[list[Any]] = []
-        # faixa título
-        data.append([Paragraph("Homem Hora / Maquina", BAR_WHITE), "", "", "", ""])
-        # header colunas
+        data.append([Paragraph("Homem Hora / Maquina", st_bar_white), "", "", "", ""])
         data.append(
             [
-                Paragraph("Item", BAR_WHITE),
-                Paragraph("Operação", BAR_WHITE),
-                Paragraph("Qtd Horas", BAR_WHITE),
-                Paragraph("Vlr Unit", BAR_WHITE),
-                Paragraph("Vlr Total", BAR_WHITE),
+                Paragraph("Item", st_bar_white),
+                Paragraph("Operação", st_bar_white),
+                Paragraph("Qtd Horas", st_bar_white),
+                Paragraph("Vlr Unit", st_bar_white),
+                Paragraph("Vlr Total", st_bar_white),
             ]
         )
 
@@ -359,37 +377,39 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         for idx in range(max_rows):
             if idx < len(itens_serv):
                 it = itens_serv[idx]
-                item_no = f"{idx+1:02d}"
+                item_no = f"{idx + 1:02d}"
+
                 operacao = _get(it, "descricao", "descricao_item", "nome", default="-")
                 qtd = _get(it, "quantidade", "qtd", default=0)
                 unit = _get(it, "valor_unitario", "preco_unitario", "valorUnitario", default=0)
+
                 total = getattr(it, "total", None)
                 if total is None:
                     total = to_float(qtd) * to_float(unit)
 
                 data.append(
                     [
-                        Paragraph(escape(item_no), BASE_C),
-                        Paragraph(escape(str(operacao)), SMALL),
-                        Paragraph(escape(fmt_number(qtd)), BASE_C),
-                        _money_cell(unit, bold=False),
-                        _money_cell(total, bold=False),
+                        Paragraph(escape(item_no), st_base_c),
+                        Paragraph(escape(str(operacao)), st_small),
+                        Paragraph(escape(fmt_number(qtd)), st_base_c),
+                        _money_cell(unit),
+                        _money_cell(total),
                     ]
                 )
             else:
                 data.append(["", "", "", "", ""])
 
-        t = Table(data, colWidths=col_w, rowHeights=[7 * mm, 7 * mm] + [7 * mm] * max_rows)
+        t = Table(data, colWidths=col_w, rowHeights=[5 * mm, 5 * mm] + [5 * mm] * max_rows)
         t.setStyle(
             TableStyle(
                 [
                     ("SPAN", (0, 0), (-1, 0)),
-                    ("BACKGROUND", (0, 0), (-1, 1), theme["BLUE"]),
+                    ("BACKGROUND", (0, 0), (-1, 1), theme["TITLE_BLUE"]),
                     ("TEXTCOLOR", (0, 0), (-1, 1), theme["WHITE"]),
                     ("ALIGN", (0, 0), (-1, 1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
-                    ("GRID", (0, 1), (-1, -1), 1.0, theme["BLACK"]),
+                    ("GRID", (0, 1), (-1, -1), 1.0, theme["GRID"]),
                     ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
 
                     ("LEFTPADDING", (0, 0), (-1, -1), 3),
@@ -401,18 +421,24 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         )
         return t
 
+    elements.append(_build_tbl_servicos())
+    elements.append(Spacer(1, 3))
+
+    # =========================================================
+    # 6) TABELA MATERIAIS (Matéria-Prima) - 8 linhas fixas
+    # =========================================================
     def _build_tbl_materiais() -> Table:
         col_w = [20 * mm, 75 * mm, 25 * mm, 22 * mm, content_w - (20 + 75 + 25 + 22) * mm]
 
         data: list[list[Any]] = []
-        data.append([Paragraph("Material ( Matéria-Prima)", BAR_WHITE), "", "", "", ""])
+        data.append([Paragraph("Material ( Matéria-Prima)", st_bar_white), "", "", "", ""])
         data.append(
             [
-                Paragraph("Item", BAR_WHITE),
-                Paragraph("Descrição", BAR_WHITE),
-                Paragraph("Qtd kg", BAR_WHITE),
-                Paragraph("Vlr Unit", BAR_WHITE),
-                Paragraph("Vlr Total", BAR_WHITE),
+                Paragraph("Item", st_bar_white),
+                Paragraph("Descrição", st_bar_white),
+                Paragraph("Qtd kg", st_bar_white),
+                Paragraph("Vlr Unit", st_bar_white),
+                Paragraph("Vlr Total", st_bar_white),
             ]
         )
 
@@ -420,37 +446,39 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         for idx in range(max_rows):
             if idx < len(itens_mat):
                 it = itens_mat[idx]
-                item_no = f"{idx+1:02d}"
+                item_no = f"{idx + 1:02d}"
+
                 desc = _get(it, "descricao", "descricao_item", "nome", default="-")
                 qtd = _get(it, "quantidade", "qtd", default=0)
                 unit = _get(it, "valor_unitario", "preco_unitario", "valorUnitario", default=0)
+
                 total = getattr(it, "total", None)
                 if total is None:
                     total = to_float(qtd) * to_float(unit)
 
                 data.append(
                     [
-                        Paragraph(escape(item_no), BASE_C),
-                        Paragraph(escape(str(desc)), SMALL),
-                        Paragraph(escape(fmt_number(qtd)), BASE_C),
-                        _money_cell(unit, bold=False),
-                        _money_cell(total, bold=False),
+                        Paragraph(escape(item_no), st_base_c),
+                        Paragraph(escape(str(desc)), st_small),
+                        Paragraph(escape(fmt_number(qtd)), st_base_c),
+                        _money_cell(unit),
+                        _money_cell(total),
                     ]
                 )
             else:
                 data.append(["", "", "", "", ""])
 
-        t = Table(data, colWidths=col_w, rowHeights=[7 * mm, 7 * mm] + [7 * mm] * max_rows)
+        t = Table(data, colWidths=col_w, rowHeights=[5 * mm, 5 * mm] + [5 * mm] * max_rows)
         t.setStyle(
             TableStyle(
                 [
                     ("SPAN", (0, 0), (-1, 0)),
-                    ("BACKGROUND", (0, 0), (-1, 1), theme["BLUE"]),
+                    ("BACKGROUND", (0, 0), (-1, 1), theme["TITLE_BLUE"]),
                     ("TEXTCOLOR", (0, 0), (-1, 1), theme["WHITE"]),
                     ("ALIGN", (0, 0), (-1, 1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
-                    ("GRID", (0, 1), (-1, -1), 1.0, theme["BLACK"]),
+                    ("GRID", (0, 1), (-1, -1), 1.0, theme["GRID"]),
                     ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
 
                     ("LEFTPADDING", (0, 0), (-1, -1), 3),
@@ -462,39 +490,52 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         )
         return t
 
+    elements.append(_build_tbl_materiais())
+
+    # =========================================================
+    # 7) TOTAL
+    # =========================================================
     total_geral = sum_totais_itens(itens_list)
 
     total_tbl = Table(
-        [[Paragraph("Valor Total do Orçamento", BAR_WHITE), Paragraph("R$", SMALL_B), Paragraph(escape(fmt_money_no_prefix(total_geral)), BOLD_R)]],
+        [
+            [
+                Paragraph("Valor Total do Orçamento", st_bar_white),
+                Paragraph("R$", st_bold),
+                Paragraph(escape(fmt_money_no_prefix(total_geral)), st_bold_r),
+            ]
+        ],
         colWidths=[content_w - 45 * mm, 10 * mm, 35 * mm],
         rowHeights=[8 * mm],
     )
     total_tbl.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (0, 0), theme["BLUE"]),
+                ("BACKGROUND", (0, 0), (0, 0), theme["TITLE_BLUE"]),
                 ("TEXTCOLOR", (0, 0), (0, 0), theme["WHITE"]),
                 ("ALIGN", (0, 0), (0, 0), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-
                 ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
-                ("GRID", (0, 0), (-1, -1), 1.0, theme["BLACK"]),
-
+                ("GRID", (0, 0), (-1, -1), 1.0, theme["GRID"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
             ]
         )
     )
+    elements.append(total_tbl)
 
+    # =========================================================
+    # 8) APROVAÇÃO + ASSINATURAS
+    # =========================================================
     aprov_bar = Table(
-        [[Paragraph("Aprovação do Orçamento", BAR_WHITE)]],
+        [[Paragraph("Aprovação do Orçamento", st_bar_white)]],
         colWidths=[content_w],
         rowHeights=[8 * mm],
     )
     aprov_bar.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), theme["BLUE"]),
+                ("BACKGROUND", (0, 0), (-1, -1), theme["TITLE_BLUE"]),
                 ("TEXTCOLOR", (0, 0), (-1, -1), theme["WHITE"]),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -502,16 +543,21 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
             ]
         )
     )
+    elements.append(aprov_bar)
 
     sign_tbl = Table(
         [
             ["", "", ""],
-            [Paragraph("________________________________", BASE_C),
-             Paragraph("________________________________", BASE_C),
-             Paragraph("________________________________", BASE_C)],
-            [Paragraph("Solicitante da Aço\nCearense", BASE_C),
-             Paragraph("Responsável\nTécnico da Aço\nCearense", BASE_C),
-             Paragraph("Responsável da\nCONTRATADA", BASE_C)],
+            [
+                Paragraph("________________________________", st_base_c),
+                Paragraph("________________________________", st_base_c),
+                Paragraph("________________________________", st_base_c),
+            ],
+            [
+                Paragraph("Solicitante da Aço\nCearense", st_base_c),
+                Paragraph("Responsável\nTécnico da Aço\nCearense", st_base_c),
+                Paragraph("Responsável da\nCONTRATADA", st_base_c),
+            ],
         ],
         colWidths=[content_w / 3.0] * 3,
         rowHeights=[14 * mm, 8 * mm, 12 * mm],
@@ -527,24 +573,8 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
             ]
         )
     )
-
-    # =========================
-    # MONTA ELEMENTOS (fluxo)
-    # =========================
-    elements: list[Any] = []
-    elements.append(Paragraph("Anexo V - Formulário de Orçamento", TITLE_TOP))
-    elements.append(Spacer(1, 4))
-
-    # Box “principal” do formulário é composto por tabelas empilhadas.
-    elements.append(top_header)
-    elements.append(header_grid)
-    elements.append(desc_tbl)
-    elements.append(_build_tbl_servicos())
-    elements.append(Spacer(1, 3))
-    elements.append(_build_tbl_materiais())
-    elements.append(total_tbl)
-    elements.append(aprov_bar)
     elements.append(sign_tbl)
 
+    # Build final
     doc.build(elements)
     return buf.getvalue()
