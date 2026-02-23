@@ -126,8 +126,8 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         name="Base",
         parent=styles["Normal"],
         fontName=FONT,
-        fontSize=9,
-        leading=11,
+        fontSize=10,
+        leading=12,
         textColor=theme["BLACK"],
     )
     st_base_c = ParagraphStyle(name="BaseC", parent=st_base, alignment=1)
@@ -136,8 +136,8 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
     st_small = ParagraphStyle(
         name="Small",
         parent=st_base,
-        fontSize=9,
-        leading=10.5,
+        fontSize=10,
+        leading=12,
     )
     st_small_c = ParagraphStyle(name="SmallC", parent=st_small, alignment=1)
     st_small_r = ParagraphStyle(name="SmallR", parent=st_small, alignment=2)
@@ -149,15 +149,15 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
     st_title_top = ParagraphStyle(
         name="TitleTop",
         parent=st_bold_c,
-        fontSize=11,
-        leading=13,
+        fontSize=12,
+        leading=14,
     )
 
     # Texto branco usado nas faixas azuis
     st_bar_white = ParagraphStyle(
         name="BarWhite",
         parent=st_bold_c,
-        fontSize=9,
+        fontSize=10,
         leading=12,
         textColor=theme["WHITE"],
     )
@@ -273,6 +273,7 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
         TableStyle(
             [
                 ("BOX", (0, 0), (-1, -1), 1.2, theme["BLACK"]),
+                ("LINEAFTER", (0, 0), (0, 0), 1.0, theme["BLACK"]),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (0, 0), "LEFT"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
@@ -288,32 +289,34 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
     # =========================================================
     # 3) GRADE DE CAMPOS (conforme modelo)
     # =========================================================
-    grid_cols = [25 * mm, 85 * mm, 22 * mm, content_w - (25 + 85 + 22) * mm]
+    # Colunas mais fiéis ao modelo do cliente (evita quebra dos rótulos da direita)
+    grid_cols = [35 * mm, 60 * mm, 50 * mm, content_w - (35 + 60 + 50) * mm]
+
     header_grid = Table(
         [
             [
                 Paragraph("Fornecedor:", st_small),
-                Paragraph("USINAGEM LUMINOX", st_bold),
-                Paragraph("N. Orç:", st_small),
-                Paragraph(f"{escape(str(numero))}            {escape(data_emissao_txt)}", st_small),
+                Paragraph("USINAGEM LUMINOX", st_small),
+                Paragraph(f"N. Orç: {escape(str(numero))}", st_small),
+                Paragraph(escape(data_emissao_txt), st_small_r),
             ],
             [
                 Paragraph("Cliente:", st_small),
-                Paragraph(escape(str(cli_nome)), st_bold),
+                Paragraph(escape(str(cli_nome)), st_small),
                 Paragraph("Necessário Desenho?", st_small),
-                Paragraph(escape(desenho_txt), st_small),
+                Paragraph("", st_small),
             ],
             [
                 Paragraph("Contato Fornecedor:", st_small),
-                Paragraph(escape(str(contato_fornecedor)), st_bold),
-                Paragraph("", st_small),
-                Paragraph("", st_small),
+                Paragraph(escape(str(contato_fornecedor)), st_small),
+                Paragraph("Sim (   )", st_small),
+                Paragraph("Não (   )", st_small),
             ],
             [
                 Paragraph("Solicitante:", st_small),
-                Paragraph(escape(str(solicitante)), st_bold),
+                Paragraph(escape(str(solicitante)), st_small),
                 Paragraph("Prazo de Entrega (em dias):", st_small),
-                Paragraph(escape(f"{prazo_entrega_dias} dias"), st_bold),
+                Paragraph(escape(f"{prazo_entrega_dias} dias"), st_small),
             ],
         ],
         colWidths=grid_cols,
@@ -322,12 +325,24 @@ def render_pdf_aco_cearense(orcamento: Any, itens: Iterable[Any], cliente: Any) 
     header_grid.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 1.0, theme["GRID"]),
+                ("BOX", (0, 0), (-1, -1), 1.0, theme["BLACK"]),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+
+                # ✅ linha vertical entre as 2 colunas (após a coluna 1)
+                ("LINEAFTER", (1, 0), (1, -1), 1.0, theme["BLACK"]),
+                # ✅ linha horizontal entre as linhas da tabela (col 0 até 1)
+                ("LINEBELOW", (0, 0), (1, -1), 1.0, theme["BLACK"]),
+                # ✅ linha horizontal após a linha 0 da tabela (col 1 até 3)
+                ("LINEBELOW", (1, 0), (3, 0), 1.0, theme["BLACK"]),
+                 # ✅ linha horizontal após a linha 2 da tabela (col 1 até 3)
+                ("LINEBELOW", (1, 2), (3, 2), 1.0, theme["BLACK"]),
+                # ✅ "Necessário Desenho?" ocupa as duas colunas
+                ("SPAN", (2, 1), (3, 1)),
+                
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 1),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ]
         )
     )

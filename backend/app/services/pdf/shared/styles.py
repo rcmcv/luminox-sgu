@@ -34,8 +34,8 @@ PDF_FORMAT_ULTRAGAZ = PdfPageFormat(
 )
 
 PDF_FORMAT_ACO_CEARENSE = PdfPageFormat(
-    left_margin=16 * mm,
-    right_margin=16 * mm,
-    top_margin=16 * mm,
-    bottom_margin=16 * mm,
+    left_margin=22 * mm,
+    right_margin=19 * mm,
+    top_margin=18.5 * mm,
+    bottom_margin=18.5 * mm,
 )
