@@ -1,82 +1,100 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from __future__ import annotations
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.api import ok
-from app.deps.pagination import get_pagination
-
+from app.core.api import ok, created
 from app.deps.db import get_db
-from app.deps.auth import get_current_user, require_roles
-from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteUpdate
-from app.repositories import cliente as repo
+from app.deps.pagination import get_pagination
+from app.repositories import cliente as cliente_repo
+from app.schemas.cliente import ClienteCreate, ClienteOut, ClienteOutComContatos, ClienteUpdate
 
 router = APIRouter()
 
-@router.post(
-    "/clientes",
-    response_model=ClienteOut,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_roles("ADMIN", "OPERACAO"))],
-)
-async def create_cliente(payload: ClienteCreate, db: AsyncSession = Depends(get_db)):
-    return await repo.create(db, payload)
 
-@router.get("/clientes", response_model=None)  # removemos o response_model para não “brigar” com o envelope
-async def list_clientes(
-    request: Request,
-    pagination = Depends(get_pagination),
+@router.post("/clientes", status_code=status.HTTP_201_CREATED)
+async def criar_cliente(
+    payload: ClienteCreate,
     db: AsyncSession = Depends(get_db),
-    user = Depends(get_current_user),
 ):
-    items = await repo.list_(db, skip=pagination.skip, limit=pagination.limit)
-    meta = {"page": pagination.page, "size": pagination.size, "count": len(items)}
-    return ok(data=[  # convertemos para dict simples (Pydantic model -> dict) via from_attributes já funciona, mas aqui garantimos
-        {
-            "id": i.id,
-            "nome": i.nome,
-            "email": i.email,
-            "telefone": i.telefone,
-            "created_at": i.created_at.isoformat() if i.created_at else None,
-            "updated_at": i.updated_at.isoformat() if i.updated_at else None,
-        } for i in items
-    ], meta=meta, request=request)
+    """
+    Cria cliente e permite criar contatos junto (1 request) via payload.contatos.
+    """
+    obj = await cliente_repo.create(db, payload)
+    return created(obj, message="Cliente cadastrado com sucesso.")
 
-@router.get("/clientes/{cliente_id}", response_model=ClienteOut)
-async def get_cliente(
+
+@router.get("/clientes")
+async def listar_clientes(
+    nome: Optional[str] = Query(None, description="Filtro por nome (contém)"),
+    cnpj: Optional[str] = Query(None, description="Filtro por CNPJ (exato)"),
+    ativo: Optional[bool] = Query(None, description="Filtro por ativo/inativo"),
+    include_contatos: bool = Query(False, description="Se true, retorna contatos junto"),
+    pagination=Depends(get_pagination),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Lista clientes com filtros básicos e paginação.
+    """
+    itens = await cliente_repo.list_(
+        db,
+        skip=pagination.skip,
+        limit=pagination.limit,
+        nome=nome,
+        cnpj=cnpj,
+        ativo=ativo,
+    )
+
+    # Se quiser incluir contatos, é só mudar o schema de resposta.
+    # (O relacionamento em Cliente está lazy='selectin', então isso vem eficiente.)
+    if include_contatos:
+        return ok([ClienteOutComContatos.model_validate(x) for x in itens], meta=pagination.meta)
+
+    return ok([ClienteOut.model_validate(x) for x in itens], meta=pagination.meta)
+
+
+@router.get("/clientes/{cliente_id}")
+async def obter_cliente(
     cliente_id: int,
+    include_contatos: bool = Query(False, description="Se true, retorna contatos junto"),
     db: AsyncSession = Depends(get_db),
-    user = Depends(get_current_user),
 ):
-    obj = await repo.get(db, cliente_id)
+    obj = await cliente_repo.get(db, cliente_id)
     if not obj:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    return obj
+        return ok(None, message="Cliente não encontrado.", status_code=404)
 
-@router.put(
-    "/clientes/{cliente_id}",
-    response_model=ClienteOut,
-    dependencies=[Depends(require_roles("ADMIN", "OPERACAO"))],
-)
-async def update_cliente(
+    if include_contatos:
+        return ok(ClienteOutComContatos.model_validate(obj))
+
+    return ok(ClienteOut.model_validate(obj))
+
+
+@router.put("/clientes/{cliente_id}")
+async def atualizar_cliente(
     cliente_id: int,
     payload: ClienteUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    obj = await repo.update(db, cliente_id, payload)
+    obj = await cliente_repo.update(db, cliente_id, payload)
     if not obj:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    return obj
+        return ok(None, message="Cliente não encontrado.", status_code=404)
 
-@router.delete(
-    "/clientes/{cliente_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_roles("ADMIN", "OPERACAO"))],
-)
-async def delete_cliente(
+    return ok(ClienteOut.model_validate(obj), message="Cliente atualizado com sucesso.")
+
+
+@router.delete("/clientes/{cliente_id}")
+async def desativar_cliente(
     cliente_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    ok = await repo.delete(db, cliente_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    return None
+    """
+    Soft delete: ativo=false.
+    Se houver vínculos (orçamentos/contratos), o repo lança HTTPException 409.
+    """
+    result = await cliente_repo.delete(db, cliente_id)
+    if not result:
+        return ok(None, message="Cliente não encontrado.", status_code=404)
+
+    return ok(True, message="Cliente desativado com sucesso.")

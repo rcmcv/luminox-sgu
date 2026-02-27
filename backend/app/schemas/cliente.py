@@ -1,5 +1,3 @@
-#from __future__ import annotations
-
 """
 Schemas de Cliente (Pydantic).
 
@@ -12,6 +10,7 @@ Nesta etapa, o schema passa a suportar:
 - soft delete via campo `ativo`
 - criação do cliente com contatos em 1 request
 """
+from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Optional

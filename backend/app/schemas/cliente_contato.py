@@ -1,5 +1,3 @@
-#from __future__ import annotations
-
 """
 Schemas de ClienteContato (Pydantic).
 
@@ -8,6 +6,7 @@ Nesta etapa, criamos os schemas necessários para:
 - criar / atualizar contato
 - retornar contato (com timestamps)
 """
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
